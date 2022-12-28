@@ -1,6 +1,6 @@
-;** Z-80(tm) DISASSEMBLER V1.30beta1+DEV - (c) 2015-22 GmEsoft, All rights reserved. **
+; 	** CP/M SAY.COM **
 ;
-;	Tue Dec 20 23:57:34 2022
+;	Wed Dec 28 09:07:29 2022
 ;
 ;	Equates file   : SAY.EQU
 ;	Screening file : SAY.SCR
@@ -19,32 +19,38 @@
 
 ORIGNL	EQU	0
 
-	IF	ORIGNL
+	IF	ORIGNL		; Bondwell 12/14
 DACOFFS	 EQU	80H
 DACPORT	 EQU	50H
 FIXQMRK	 EQU	0
 SIGNIT	 EQU	0
-	ELSE
+	ELSE			; TRS-80 Model 4 + Orchestra 90
 DACOFFS	 EQU	00H
-DACPORT	 EQU	75H
+DACPORT	 EQU	75H		; Orchestra 90 right channel
 FIXQMRK	 EQU	1
 SIGNIT	 EQU	1
 	ENDIF
 
-
+; Define Text-To-Speech transformation rule.
+;
+; All characters except the last one have their high bit set.
+;	Double quotes are typed as [_] but stored as ["].
+;	Single quotes are typed as [|] but stored as ['].
 DEFRULE	MACRO	STR
 	LOCAL	LEN,POS
 
+	; Count characters
 LEN	DEFL	0
 	IRPC	C,'STR'
 LEN	DEFL	LEN+1
 	ENDM
 
+	; Generate output
 POS	DEFL	0
 	IRPC	C,'STR'
 POS	DEFL	POS+1
 	IFEQ	POS,LEN
-	DB	'C'
+	DB	'C'		; Last character bit 7 is 0
 	ELSE
 	IFEQ	'C','_'
 	DB	22H+80H		; _ -> "
@@ -52,7 +58,7 @@ POS	DEFL	POS+1
 	IFEQ	'C','|'
 	DB	27H+80H		; | -> '
 	ELSE
-	DB	'C'+80H
+	DB	'C'+80H		; Previous characters bit 7 is 1
 	ENDIF
 	ENDIF
 	ENDIF
@@ -60,6 +66,7 @@ POS	DEFL	POS+1
 
 	ENDM
 
+; Define a string of characters with their high bit set.
 DEFSTR8	MACRO	STR
 	IRPC	C,'STR'
 	DB	'C'+80H
@@ -84,7 +91,7 @@ D5000	EQU	5000H
 D6FFF	EQU	6FFFH
 SINUS	EQU	7100H		; Sinus Table (values are signed in high nibble) (phase Y)
 D7161	EQU	7161H
-PITCH_CONTOUR	EQU	7461H		; (phase X)
+PITCH_CONTOUR	EQU	7461H	; (phase X)
 D7FFF	EQU	7FFFH
 D86FE	EQU	86FEH
 D8FFF	EQU	8FFFH
@@ -327,24 +334,24 @@ CHECK_INPUT_SOU:	; try to open specified file. On fail input comes from comma
 
 ASSIGN_PITCH_CO:	; Avoids monotone output (disabled for songs)
 	LD	A,(SONG)	; song mode (monotone output): 0 = song mode disabled,
-	CP	00H
+	CP	00H		; return if song mode
 	RET	NZ
-	LD	C,00H
-	LD	HL,PITCH_CONTOUR;
+	LD	C,00H		; 256 bytes to modify
+	LD	HL,PITCH_CONTOUR; pitch contour table
 L_ASSIGN_PITCH_:
-	LD	A,(HL)
-	INC	H
-	LD	B,(HL)
-	SRL	B
-	DEC	H
-	SUB	B
-	LD	(HL),A
-	INC	HL
-	DEC	C
+	LD	A,(HL)		; Get pitch contour value
+	INC	H		; Point to FREQUENCY1
+	LD	B,(HL)		; Get Frequency 1 (F1) value
+	SRL	B		; Divide F1 by 2
+	DEC	H		; Point to PITCH_CONTOUR
+	SUB	B		; Subtract F1 / 2 from pitch contour
+	LD	(HL),A		; Store modified pitch contour
+	INC	HL		; next byte
+	DEC	C		; until 256 bytes modified
 	JR	NZ,L_ASSIGN_PITCH_
-	RET
+	RET			; done
 
-	DS	47*8			;slack
+	DS	47*8		; slack
 
 
 MSG_HELP:	; Help text
@@ -367,9 +374,9 @@ MSG_HELP:	; Help text
 	DB	'  say speech.txt',0DH,0AH,0DH,0AH,'$'
 
 	IF	SIGNIT
-	 DS	6			;slack
+	 DS	6		; slack
 	ELSE
-	 DS	46			;slack
+	 DS	46		; slack
 	ENDIF
 
 
@@ -402,20 +409,23 @@ BLOCKPOS:	; position inside file block (0..127)
 
 	DB	80H
 
-	DS	32			;slack
+	DS	32		; slack
 
 RESET_BIT7:	; Reset high bit of A (doesn't need a subroutine...)
 	RES	7,A
 	RET
 
-	DC	480,'+'			;slack
+	DC	480,'+'		; slack
 
 	; end of stack, begin of garbage
 STACKEND:
-	DC	132,'-'		;slack
+	DC	132,'-'		; slack
+
+
 ;==================================================================================================
 ;	E N G L I S H
 ;==================================================================================================
+
 
 PROCESS_ENGLISH:	; Process English string
 	LD	BC,D0001
@@ -491,7 +501,7 @@ L97A5:	LD	A,(MEM64)	; (mem64_sign2)
 	JR	Z,J_CV_ENG2PHO3	; use alpha rules
 	LD	HL,RULES2	; Rules2: digits and symbols
 	LD	(MEM62),HL	; Rule LSB or word (mem62)
-	JP	L_NEXT_RULE	; test next rule        
+	JP	L_NEXT_RULE	; test next rule
 
 J_CV_ENG2PHO3:	; use alpha rules
 	CP	00H
@@ -538,7 +548,7 @@ L_NEXT_RULE:	; test next rule
 	INC	HL
 	LD	(MEM62),HL	; Rule LSB or word (mem62)
 	BIT	7,(HL)
-	JR	NZ,L_NEXT_RULE	; test next rule        
+	JR	NZ,L_NEXT_RULE	; test next rule
 	LD	E,01H
 	INC	HL
 
@@ -591,7 +601,7 @@ L_CMPRULE:	; Loop to compare the string within the parentheses
 	LD	HL,(MEM62)	; Rule LSB or word (mem62)
 	ADD	HL,DE
 	CP	(HL)
-	JR	NZ,L_NEXT_RULE	; test next rule        
+	JR	NZ,L_NEXT_RULE	; test next rule
 	INC	E
 	LD	A,(MEM65)	; (mem65_sign1)
 	CP	E
@@ -628,7 +638,7 @@ L_MATCH_LHS:	; LHS pattern matching loop
 	ADD	HL,BC
 	LD	A,(MEM57)	; Phoneme insertion point (mem57)
 	CP	(HL)
-	JP	NZ,L_NEXT_RULE	; test next rule        
+	JP	NZ,L_NEXT_RULE	; test next rule
 	LD	A,C
 	LD	(MEM59),A	; Phoneme length to insert (mem59)
 	JR	L_MATCH_LHS	; LHS pattern matching loop
@@ -670,7 +680,7 @@ LHS_HASH:	; lhs '#' - Match one or more vowels
 	BIT	6,(HL)		; check vowel bit (A,E,I,O,U,Y)
 	; test bit
 L98E1:	JR	NZ,L98D5	; accept if yes
-	JP	L_NEXT_RULE	; test next rule        
+	JP	L_NEXT_RULE	; test next rule
 
 LHS_DOT:	; lhs '.' - Match one voiced consonant
 	CALL	GET_LHS		; Get LHS address: &CHARFLAGS[ENGLISH_BUFFER[MEM59-1]]
@@ -693,14 +703,14 @@ LHS_AND:	; lhs '&' - Match one sibilant
 	JR	Z,L98D5
 	CP	'S'+80H		; ... or S
 L9907:	JR	Z,L98D5		; accept if yes
-	JP	L_NEXT_RULE	; test next rule        
+	JP	L_NEXT_RULE	; test next rule
 
 LHS_AT:		; lhs '@' - Match one consonant influencing long u
 	CALL	GET_LHS		; Get LHS address: &CHARFLAGS[ENGLISH_BUFFER[MEM59-1]]
 	BIT	2,(HL)		; Consonant influencing long U bit set ? (D,J,L,N,R,S,T,Z)
 	JR	NZ,L98D5	; Accept if yes
 				; TODO: check patterns 'TH', 'CH', 'SH' ?
-	JP	L_NEXT_RULE	; test next rule        
+	JP	L_NEXT_RULE	; test next rule
 
 LHS_CARET:	; lhs '^' - Match one consonant
 	CALL	GET_LHS		; Get LHS address: &CHARFLAGS[ENGLISH_BUFFER[MEM59-1]]
@@ -778,7 +788,7 @@ L9976:	LD	A,(MEM57)	; Phoneme insertion point (mem57)
 	CP	':'+80H		; Match zero or more consonants
 	JR	Z,RHS_COL	; rhs ':' - Match zero or more consonants
 	CP	'%'+80H		; Match a suffix
-	JP	Z,RHS_PCT	; rhs '%' - Match a suffix
+	JP	Z,RHS_PCT	; rhs '%' - Match a suffix: -E, -ER, -ING, -ES, -ED, -EFUL
 	CALL	PLAY_BELL	; Send <BEL> to console
 	CALL	PLAY_BELL	; Send <BEL> to console
 	CALL	PLAY_BELL	; Send <BEL> to console
@@ -825,7 +835,7 @@ RHS_AT:		; rhs '@' - Match one consonant influencing long u
 	BIT	2,(HL)		; consonant influencing long U bit set ?
 	JR	NZ,L99B0	; accept if yes
 				; TODO: handle 'TH', 'CH', 'SH' ?
-	JP	L_NEXT_RULE	; test next rule        
+	JP	L_NEXT_RULE	; test next rule
 
 RHS_CRT:	; rhs '^' - Match one consonant
 	CALL	GET_RHS		; Get RHS address: &CHARFLAGS[ENGLISH_BUFFER[MEM58+1]]
@@ -854,7 +864,7 @@ RHS_COL:	; rhs ':' - Match zero or more consonants
 	LD	(MEM58),A	; Phoneme stress value to insert (mem58)
 	JR	RHS_COL		; rhs ':' - Match zero or more consonants
 
-RHS_PCT:	; rhs '%' - Match a suffix: -E, -ER, -ING, -S, -D, -LY, -FUL
+RHS_PCT:	; rhs '%' - Match a suffix: -E, -ER, -ING, -ES, -ED, -ELY, -EFUL
 	LD	A,(MEM58)	; Phoneme stress value to insert (mem58)
 	LD	C,A
 	INC	C
@@ -877,27 +887,27 @@ RHS_PCT:	; rhs '%' - Match a suffix: -E, -ER, -ING, -S, -D, -LY, -FUL
 	ADD	HL,BC
 	LD	A,(HL)
 	CP	'R'+80H		; 'R' ?
-	JR	NZ,J_MATCH_S_D_LY; if not, Test match -S/-D/-LY
+	JR	NZ,J_MATCH_ES_ED_E; if not, Test match -S/-D/-LY
 J_MATCH_OK:	; Matching OK
 	LD	A,C
 	LD	(MEM58),A	; Phoneme stress value to insert (mem58)
 	JP	L_MATCH_RHS	; RHS pattern matching loop
 
-J_MATCH_S_D_LY:	; Test match -S/-D/-LY
-	CP	'S'+80H		; 'S'
+J_MATCH_ES_ED_E:	; Test match -ES/-ED/-ELY
+	CP	'S'+80H		; 'S' (-ES)
 	JR	Z,J_MATCH_OK	; Accept if yes
-	CP	'D'+80H		; 'D'
+	CP	'D'+80H		; 'D' (-ED)
 	JR	Z,J_MATCH_OK	; Accept if yes
-	CP	'L'+80H		; 'L'
-	JR	NZ,J_MATCH_FUL	; If not, Test match -FUL
+	CP	'L'+80H		; 'L' (-EL*)
+	JR	NZ,J_MATCH_EFUL	; If not, Test match -FUL
 	INC	C		; point to next char
 	INC	HL
-	LD	A,'Y'+80H	; 'Y' (-LY) ?
+	LD	A,'Y'+80H	; 'Y' (-ELY) ?
 	CP	(HL)
 	JR	Z,J_MATCH_OK	; Accept if yes
 	JP	L_NEXT_RULE	; go to next rule
 
-J_MATCH_FUL:	; Test match -FUL
+J_MATCH_EFUL:	; Test match -EFUL
 	CP	'F'+80H		; 'F' ?
 	JP	NZ,L_NEXT_RULE	; go to next rule if not
 	INC	C		; point to next char
@@ -970,9 +980,12 @@ GET_RHS:	; Get RHS address: &CHARFLAGS[ENGLISH_BUFFER[MEM58+1]]
 	JR	J_GET_LHS
 
 	DS	15		; slack
+
+
 ;==================================================================================================
 ;	P H O N E M E S
 ;==================================================================================================
+
 
 PROCESS_PHONEME:		; Process Phonemes string (S9b61_say_main)
 	LD	A,0FFH
@@ -1379,7 +1392,7 @@ L9C8D:	LD	A,E
 	INC	C
 	LD	A,C
 	LD	(MEM57),A	; Phoneme insertion point (mem57)
-	CALL	INSERT_PHONEME		; Insert phoneme 'L', 'M' or 'N'
+	CALL	INSERT_PHONEME	; Insert phoneme 'L', 'M' or 'N'
 	JP	NEXT_PHON	; Move to next phoneme
 
 	; RULE:
@@ -1418,7 +1431,7 @@ L9CAA:	LD	E,A
 	LD	(MEM58),A	; Phoneme stress value to insert (mem58)
 	LD	A,1FH		; 'Q' = glottal stop
 	LD	(MEM60),A	; (mem60) = 'Q', code to insert
-	CALL	INSERT_PHONEME		; insert the 'Q'
+	CALL	INSERT_PHONEME	; insert the 'Q'
 	JP	NEXT_PHON	; Move to next phoneme
 
 	; RULES FOR PHONEMES BEFORE R
@@ -1582,7 +1595,7 @@ L9DA7:	INC	A		; insert 'J+' after 'J', 'CH+' after 'CH'
 	LD	A,(HL)		; get the current stress
 	LD	(MEM58),A	; Phoneme stress value to insert (mem58)
 	CALL	INSERT_PHONEME	; Insert phoneme (mem60,mem59,mem58) at position (mem57
-	JR	NEXT_PHON	; Move to next phoneme  
+	JR	NEXT_PHON	; Move to next phoneme
 
 	; RULE: Soften T following vowel
 	; NOTE: This rule fails for cases such as "ODD"
@@ -2238,12 +2251,12 @@ LA197:	CP	0FEH		; Block separator ? (maybe unused...)
 	LD	(IY+0),0FFH
 	CALL	RENDER		; render the phonemes
 	LD	E,00H		; reset the PhonemeIndexOutput index
-	JR	L1_PREP_OUTPUT		; continue
+	JR	L1_PREP_OUTPUT	; continue
 
 LA1AD:	CP	00H		; Null phoneme ?
 	JR	NZ,LA1B4	; jump if not
 	INC	C		; next input
-	JR	L1_PREP_OUTPUT		; continue
+	JR	L1_PREP_OUTPUT	; continue
 
 LA1B4:	LD	IY,PHONINDEX_OUT; phonemes table for output (PhonemeIndexOutput)
 	ADD	IY,DE		; copy phoneme code to PhonemeIndexOutput
@@ -2256,7 +2269,7 @@ LA1B4:	LD	IY,PHONINDEX_OUT; phonemes table for output (PhonemeIndexOutput)
 	CALL	IXBC_TO_IYDE	; copy phoneme stress
 	INC	C		; next input
 	INC	E		; next output
-	JR	L1_PREP_OUTPUT		; continue
+	JR	L1_PREP_OUTPUT	; continue
 
 
 
@@ -2368,7 +2381,7 @@ COPY_FRAMES:	; copy from the source to the frames list
 	JR	NZ,COPY_FRAMES	; copy from the source to the frames list
 	LD	HL,PHONEME_INDEX; phoneme index (mem44)
 	INC	(HL)
-	JP	NZ,L_CREATE_FRAMES; create frames loop  
+	JP	NZ,L_CREATE_FRAMES; create frames loop
 
 	; -------------------
 	;pos47694:
@@ -3262,13 +3275,13 @@ LA6F8:	DB	00H
 LA6F9:	DB	00H
 
 LA6FA:
-	DC	4102,'*'		;slack
+	DC	4102,'*'	; slack
 
 
 
 	PHASE	5800H
 
-	DS	161		;slack
+	DS	161		; slack
 
 ; Character flags (ASCII 00H-5FH)
 CF_NONE		EQU	00H	; No flag set
@@ -3322,7 +3335,7 @@ CHARFLAGS:	; English characters flags (tab36376)
 	DB	CF_NONE						; '_'
 
 ENGLISH_BUFFER:	; English buffer
-	DC	158*8+4,'E'		;slack
+	DC	158*8+4,'E'	; slack
 
 RULESPTR_LSB:	; Letters rules pointers LSB table
 	DB	LOW RULES_A,LOW RULES_B,LOW RULES_C,LOW RULES_D
@@ -3343,7 +3356,7 @@ RULESPTR_MSB:	; Letters rules pointers MSB table
 	DB	HIGH RULES_Y,HIGH RULES_Z
 
 RULESPTR_END:	; Letters rules pointers table end
-	DC	65,'R'		;slack
+	DC	65,'R'		; slack
 
 RULES2:	; Rules2: digits and symbols
 	DEFRULE	"(A)="
@@ -3888,13 +3901,13 @@ RULES_Z:	; Rules for 'Z'
 
 RULES_END:	; End of Rules
 
-	DC	38*8+3,'?'		;slack
+	DC	38*8+3,'?'	; slack
 
 
 	DEPHASE
 
 
-	PHASE	SINUS
+	PHASE	SINUS		; 7100H
 ;SINUS:	; Sinus table (signed 4-bit values in high nibble)
 
 	DB	00H,00H,00H,10H,10H,10H,10H,10H
@@ -3973,63 +3986,32 @@ MULTTABLE:	; Multiply Table (Signed 8-bit = signed 4-bit * signed 4-bit
 	DEPHASE
 
 
-	PHASE	PITCH_CONTOUR
+	PHASE	PITCH_CONTOUR	; 7461H
 
-	DB	39H,39H,39H,39H,39H,39H,39H,39H
-	DB	39H,3AH,3AH,3BH,3BH,3CH,3CH,3CH
-	DB	3AH,38H,36H,34H,32H,31H,30H,30H
-	DB	2FH,2FH,2EH,2DH,2DH,2CH,2CH,2BH
-	DB	2AH,2AH,2CH,2EH,30H,34H,38H,3DH
-	DB	3DH,3CH,3BH,3BH,3BH,3BH,3BH,3CH
-	DB	3CH,3DH,3DH,3DH,3DH,3DH,3DH,3DH
-	DB	3CH,3BH,39H,39H,39H,39H,39H,39H
-	DB	39H,39H,39H,39H,39H,39H,3AH,3AH
-	DB	3BH,3CH,3EH,40H,42H,43H,43H,43H
-	DB	43H,43H,43H,43H,41H,3EH,3CH,3CH
-	DB	3CH,3CH,3CH,3CH,3CH,3CH,3CH,3BH
-	DB	3CH,3DH,3EH,3FH,40H,41H,42H,43H
-	DB	45H,47H,49H,4CH,4EH,50H,51H,52H
-	DB	53H,54H,55H,56H,57H,58H,59H,5AH
-	DB	57H,52H,4FH,4AH,47H,45H,42H,3FH
-	DB	3DH,3AH,37H,37H,37H,37H,37H,37H
-	DB	37H,37H,37H,0AH,0E6H,0E6H,0FAH,0EH
-	DB	22H,0EH,0F0H,0D2H,0D2H,0E6H,0FAH,0EH
-	DB	0EH,17H,16H,1EH,1DH,1BH,1BH,1BH
-	DB	1BH,1BH,1BH,1BH,1AH,0FH,04H,03H
-	DB	02H,01H,01H,02H,04H,05H,11H,1DH
-	DB	1EH,20H,22H,22H,22H,22H,22H,0EH
-	DB	0F0H,0F0H,0F0H,0F7H,0C8H,0C6H,0C5H,0C3H
-	DB	0C1H,0BFH,0BDH,0BBH,0B9H,0B9H,0B9H,0B9H
-	DB	0B9H,0B9H,0B9H,0B9H,0B9H,95H,95H,95H
-	DB	95H,95H,95H,95H,95H,0C6H,0C6H,0C6H
-	DB	0C6H,0C6H,0C6H,0C6H,0C6H,0C6H,7EH,0B6H
-	DB	0B6H,0B6H,0B6H,0B6H,0B6H,7FH,98H,60H
-	DB	4CH,0F4H,72H,0ACH,60H,0C0H,76H,91H
-	DB	0F4H,1CH,2CH,0E2H,60H,76H,0EEH,60H
-	DB	0FCH,80H,85H,0E3H,43H,49H,60H,0DDH
+	DC	256,'0'		; slack
 
 FREQUENCY1:	; Frequency 1 frames
-	DC	256,'1'			;slack
+	DC	256,'1'		; slack
 
 FREQUENCY2:	; Frequency 2 frames
-	DC	256,'2'			;slack
+	DC	256,'2'		; slack
 
 FREQUENCY3:	; Frequency 3 frames
-	DC	256,'3'			;slack
+	DC	256,'3'		; slack
 
 	; Amplitude 1 frames
 	; signed 4-bit values in low nibble
 AMPLITUDE1:	; Amplitude 1 frames
-	DC	256,'4'			;slack
+	DC	256,'4'		; slack
 
 AMPLITUDE2:	; Amplitude 2 frames
-	DC	256,'5'		;slack
+	DC	256,'5'		; slack
 
 AMPLITUDE3:	; Amplitude 3 frames
-	DC	256,'6'			;slack
+	DC	256,'6'		; slack
 
 CONSONANTFLAG:	; Consonants flags frames
-	DC	256,'7'			;slack
+	DC	256,'7'		; slack
 
 FREQ1DATA:
 	; Formant 1 frequencies (throat)
@@ -5288,7 +5270,7 @@ STRESS_AMOUNTS:	; stress amount (add to pitch) (tab47492)
 SPEECHBUFFERLEN:	; Number of chars in speech buffer
 	DB	0BDH
 SPEECH_BUFFER:
-	DC	88*8+1,'S'		;slack
+	DC	88*8+1,'S'	; slack
 
 CONSONANT_TAB:	; table { 0x18, 0x1A, 0x17, 0x17, 0x17 } (tab48426)
 	DB	80H^80H^DACOFFS
@@ -5512,7 +5494,7 @@ PHONM_FLAGS2:	;phoneme flags 2
 
 PHONM_FLAGS_END:	;end of phoneme flags
 
-	DC	574*8+2,'E'			;slack
+	DC	574*8+2,'E'	; slack
 
 
 	END	ENTRY
