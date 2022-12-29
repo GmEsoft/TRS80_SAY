@@ -20,15 +20,21 @@
 ORIGNL	EQU	0
 
 	IF	ORIGNL		; Bondwell 12/14
-DACOFFS	 EQU	80H
-DACPORT	 EQU	50H
-FIXQMRK	 EQU	0
-SIGNIT	 EQU	0
+
+DACOFFS	 EQU	80H		; Wave output centered at 80H
+DACPORT	 EQU	50H		; Bondwell 12/14 audio out
+FIXQMRK	 EQU	0		; Don't fix "(?)=." rule
+FIXADC	 EQU	0		; Don't change faulty ADC to ADD
+SIGNIT	 EQU	0		; Don't add my own signature
+
 	ELSE			; TRS-80 Model 4 + Orchestra 90
-DACOFFS	 EQU	00H
+
+DACOFFS	 EQU	00H		; Wave output centered at 0
 DACPORT	 EQU	75H		; Orchestra 90 right channel
-FIXQMRK	 EQU	1
-SIGNIT	 EQU	1
+FIXQMRK	 EQU	1		; Fix "(?)=." rule
+FIXADC	 EQU	1		; Change faulty ADC to ADD
+SIGNIT	 EQU	1		; Add my own signature
+
 	ENDIF
 
 ; Define Text-To-Speech transformation rule.
@@ -1805,7 +1811,7 @@ L9ECB:	LD	HL,PHONEMELENGTHS; Phoneme lengths buffer
 	LD	(HL),A
 	SRL	A
 	ADD	A,(HL)
-	ADC	A,01H
+	ADC	A,01H		; Why ADC ?
 	LD	HL,PHONEMELENGTHS; Phoneme lengths buffer
 	ADD	HL,BC
 	LD	(HL),A
@@ -1850,7 +1856,7 @@ L9EEE:	LD	C,(HL)
 	SRL	A
 	SRL	A
 	ADD	A,(HL)
-	ADC	A,01H
+	ADC	A,01H		; why ADC ?
 	LD	HL,PHONEMELENGTHS; Phoneme lengths buffer
 	ADD	HL,BC
 	LD	(HL),A
@@ -2826,8 +2832,15 @@ L_SOUNDOUT2:	; vowel output loop
 	LD	A,(DE)		; get multtable
 	EXX
 	ADD	A,B		; sum the 3 formants
+
+	IF	FIXADC		; No need to use ADC here ...
+	ADD	A,C
+	ADD	A,DACOFFS
+	ELSE
 	ADC	A,C
 	ADC	A,DACOFFS
+	ENDIF
+
 	OUT	(DACPORT),A	; output the wave
 	LD	HL,SAMPLES_CTR	; samples counter (mem45)
 	DEC	(HL)
@@ -3910,6 +3923,8 @@ RULES_END:	; End of Rules
 	PHASE	SINUS		; 7100H
 ;SINUS:	; Sinus table (signed 4-bit values in high nibble)
 
+	ASSERT	LOW $ = 0	; Must be on page boundary
+
 	DB	00H,00H,00H,10H,10H,10H,10H,10H
 	DB	10H,20H,20H,20H,20H,20H,20H,30H
 	DB	30H,30H,30H,30H,30H,30H,40H,40H
@@ -3944,10 +3959,15 @@ RULES_END:	; End of Rules
 	DB	0F0H,0F0H,0F0H,0F0H,0F0H,0F0H,00H,00H
 
 RECTANGLE:	; Rectangle Table (values are signed in high nibble)
+	ASSERT	LOW $ = 0	; Must be on page boundary
+	ASSERT	$ = SINUS+0100H	; Must immediately follow SINUS
+
 	DC	80H,90H		; 128 times 90H
 	DC	80H,70H		; 128 times 70H
 
 MULTTABLE:	; Multiply Table (Signed 8-bit = signed 4-bit * signed 4-bit
+	ASSERT	LOW $ = 0	; Must be on page boundary
+
 	DB	00H,00H,00H,00H,00H,00H,00H,00H
 	DB	00H,00H,00H,00H,00H,00H,00H,00H
 	DB	00H,00H,01H,01H,02H,02H,03H,03H
@@ -3991,6 +4011,7 @@ MULTTABLE:	; Multiply Table (Signed 8-bit = signed 4-bit * signed 4-bit
 	DC	256,'0'		; slack
 
 FREQUENCY1:	; Frequency 1 frames
+	ASSERT	$ = PITCH_CONTOUR+0100H ; Must immediately follow PITCH_CONTOUR
 	DC	256,'1'		; slack
 
 FREQUENCY2:	; Frequency 2 frames
@@ -4005,9 +4026,11 @@ AMPLITUDE1:	; Amplitude 1 frames
 	DC	256,'4'		; slack
 
 AMPLITUDE2:	; Amplitude 2 frames
+	ASSERT	$ = AMPLITUDE1+0100H ; Must immediately follow AMPLITUDE1
 	DC	256,'5'		; slack
 
 AMPLITUDE3:	; Amplitude 3 frames
+	ASSERT	$ = AMPLITUDE2+0100H ; Must immediately follow AMPLITUDE2
 	DC	256,'6'		; slack
 
 CONSONANTFLAG:	; Consonants flags frames
@@ -5284,8 +5307,10 @@ PHONEMEINDEX:	; Phonemes buffer (L9be0_phonemeIndex)
 PHONEMEINDEXEND:	; End of Phoneme Index
 	DC	2,'J'
 PHONEMELENGTHS:	; Phoneme lengths (TODO: check)
+	ASSERT	$ = PHONEMEINDEX+0100H ; Must be PHONEMEINDEX+0100H
 	DC	256,'?'
 STRESS:	; stress value for each phoneme (L9de0_stress)
+	ASSERT	$ = PHONEMEINDEX+0200H ; Must be PHONEMEINDEX+0200H
 	DC	256,'S'
 
 STRESSINPUTTBL:	; stress input codes ('1'..'9')
