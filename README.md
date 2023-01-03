@@ -4,15 +4,23 @@ Say
 S.A.M.-based text-to-speech voice synthesizer
 ---------------------------------------------
 
-This is a S.A.M.-based text-to-speech voice synthesizer for CP/M. Adapted to work on the TRS-80 Model 4(p) with the Orchestra-90 sound adapter.
+This is a S.A.M.-based text-to-speech voice synthesizer for CP/M and LS-DOS 6.3. Adapted to work on the TRS-80 
+Model 4(p) with the Orchestra-90 sound adapter.
 
-Plan to port this program to LDOS and LS-DOS. Maybe make a terminate-and-stay-resident version.
+Based on SPEECH.COM for Bondwell 12/14, and on an improved version SAY.COM by Fabrizio Di Vittorio, it has been 
+further reworked to reduce the size of the binary executable, and to port it to TRS-80 Model 4 with Orchestra-90 
+running on CP/M or LS-DOS 6.3.
 
-To be assembled using ZMAC by [George Phillips](http://48k.ca) (http://48k.ca/zmac.html). Produces a core-image-file that will be loaded by CP/M at 0100H.
+Plan to make a terminate-and-stay-resident version.
+
+To be assembled using ZMAC by [George Phillips](http://48k.ca) (http://48k.ca/zmac.html). Produces a core-image-file that will be 
+loaded by CP/M at 0100H, or a /CMD file that will be loaded by LS-DOS 6.3.
 
 Based on the works by [Fabrizio Di Vittorio](https://github.com/fdivitto) (https://github.com/fdivitto/SAY).
 
 ![](SAY-CPM.PNG)
+
+![](SAY-LSDOS.PNG)
 
 The following text is taken from his repository.
 
@@ -51,7 +59,9 @@ The following text is taken from his repository.
 
 ### See also:
 
-- https://github.com/DLehenbauer/c64-sam.git for a reverse-engineered source code of S.A.M. for Commodore 64, done by [Daniel Lehenbauer](https://github.com/DLehenbauer);
-- https://github.com/s-macke/SAM.git for a re-implementation of S.A.M. in the C language, done by [Sebastian Macke](https://github.com/s-macke).
+- https://github.com/DLehenbauer/c64-sam.git for a reverse-engineered source code of S.A.M. for Commodore 64, 
+  done by [Daniel Lehenbauer](https://github.com/DLehenbauer);
+- https://github.com/s-macke/SAM.git for a re-implementation of S.A.M. in the C language, done by 
+  [Sebastian Macke](https://github.com/s-macke).
 
 Both projects have also been helpful to this project.

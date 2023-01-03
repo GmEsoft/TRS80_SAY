@@ -1,41 +1,74 @@
-; 	** CP/M SAY.COM **
+; 	** CP/M SAY.COM - LS-DOS 6 SAY/CMD **
 ;
-;	Wed Dec 28 09:07:29 2022
-;
-;	Equates file   : SAY.EQU
-;	Screening file : SAY.SCR
+;	Assemble using ZMAC from http://48k.ca/zmac.html
+;	- For CP/M (Bondwell 12/14 CP/M):
+;		ZMAC --zmac SAY.ASM -P0=1 --od . --oo CIM,LST,BDS
+;		and rename SAY.CIM to SAY.COM
+;	- For CP/M (Montezuma Micro CP/M 2.x) and Orchestra-90:
+;		ZMAC --zmac SAY.ASM -P0=2 --od . --oo CIM,LST,BDS
+;		and rename SAY.CIM to SAY.COM
+;	- For LS-DOS 6.3 and Orchestra-90:
+;		ZMAC --zmac SAY.ASM -P0=1 --od . --oo CMD,LST,BDS
 
-;CONFIG:
-;-------
-; DACOFFS: DAC OFFSET
-;	ORIGINAL: 80H
-;	ORCH90:   00H
-; DACPORT: DAC PORT
-;	ORIGINAL: 50H
-;	ORCH90:   75H (RIGHT CHANNEL)
-; FIXQMRK: QUESTION MARK TRANSLATION FIX
-;	ORIGINAL: 0 (?->.)
-;	MOD:      1 (?->?)
 
-ORIGNL	EQU	0
 
-	IF	ORIGNL		; Bondwell 12/14
 
-DACOFFS	 EQU	80H		; Wave output centered at 80H
-DACPORT	 EQU	50H		; Bondwell 12/14 audio out
-FIXQMRK	 EQU	0		; Don't fix "(?)=." rule
-FIXADC	 EQU	0		; Don't change faulty ADC to ADD
-SIGNIT	 EQU	0		; Don't add my own signature
+;==================================================================================================
+;	C O N F I G
+;==================================================================================================
 
-	ELSE			; TRS-80 Model 4 + Orchestra 90
+_BREAK	EQU	0
 
-DACOFFS	 EQU	00H		; Wave output centered at 0
-DACPORT	 EQU	75H		; Orchestra 90 right channel
-FIXQMRK	 EQU	1		; Fix "(?)=." rule
-FIXADC	 EQU	1		; Change faulty ADC to ADD
-SIGNIT	 EQU	1		; Add my own signature
-
+	IF	@@0
+CONFIG	EQU	@@0
+	ELSE
+CONFIG	EQU	1
 	ENDIF
+
+
+	IF	CONFIG = 1	; Bondwell 12/14 CP/M
+CPM	  EQU	1		; CP/M version
+LSDOS6	  EQU	0		; LS-DOS version
+DACOFFS	  EQU	80H		; Wave output centered at 80H
+DACPORT	  EQU	50H		; Bondwell 12/14 audio out
+FIXQMRK	  EQU	0		; Don't fix "(?)=." rule
+ORCH90	  EQU	0		; Don't add ORCH90 signature
+	ENDIF
+
+	IF	CONFIG = 2	; TRS-80 Model 4 CP/M + Orchestra 90
+CPM	  EQU	1		; CP/M version
+LSDOS6	  EQU	0		; LS-DOS version
+DACOFFS	  EQU	00H		; Wave output centered at 0
+DACPORT	  EQU	75H		; Orchestra 90 right channel
+FIXQMRK	  EQU	1		; Fix "(?)=." rule
+ORCH90	  EQU	1		; Add ORCH90 signature
+	ENDIF
+
+	IF	CONFIG = 3	; TRS-80 Model 4 LS-DOS 6 + Orchestra 90
+CPM	  EQU	0		; CP/M version
+LSDOS6	  EQU	1		; LS-DOS version
+DACOFFS	  EQU	00H		; Wave output centered at 0
+DACPORT	  EQU	75H		; Orchestra 90 right channel
+FIXQMRK	  EQU	1		; Fix "(?)=." rule
+ORCH90	  EQU	1		; Add ORCH90 signature
+	ENDIF
+
+	IFNDEF	CPM
+	 ASSERT	0		; Invalid config selected
+	 END
+	ENDIF
+
+
+;==================================================================================================
+;	M A C R O S
+;==================================================================================================
+
+
+$BREAK	MACRO
+	IF	_BREAK
+	  DB	0EDH,0F5H	;$BREAK
+	ENDIF
+	ENDM
 
 ; Define Text-To-Speech transformation rule.
 ;
@@ -48,26 +81,26 @@ DEFRULE	MACRO	STR
 	; Count characters
 LEN	DEFL	0
 	IRPC	C,'STR'
-LEN	DEFL	LEN+1
+LEN	 DEFL	LEN+1
 	ENDM
 
 	; Generate output
 POS	DEFL	0
 	IRPC	C,'STR'
-POS	DEFL	POS+1
-	IFEQ	POS,LEN
-	DB	'C'		; Last character bit 7 is 0
-	ELSE
-	IFEQ	'C','_'
-	DB	22H+80H		; _ -> "
-	ELSE
-	IFEQ	'C','|'
-	DB	27H+80H		; | -> '
-	ELSE
-	DB	'C'+80H		; Previous characters bit 7 is 1
-	ENDIF
-	ENDIF
-	ENDIF
+POS	 DEFL	POS+1
+	 IFEQ	POS,LEN
+	  DB	'C'		; Last character bit 7 is 0
+	 ELSE
+	  IFEQ	'C','_'
+	   DB	22H+80H		; _ -> "
+	  ELSE
+	   IFEQ	'C','|'
+	    DB	27H+80H		; | -> '
+	   ELSE
+	    DB	'C'+80H		; Previous characters bit 7 is 1
+	   ENDIF
+	  ENDIF
+	 ENDIF
 	ENDM
 
 	ENDM
@@ -75,62 +108,71 @@ POS	DEFL	POS+1
 ; Define a string of characters with their high bit set.
 DEFSTR8	MACRO	STR
 	IRPC	C,'STR'
-	DB	'C'+80H
+	  DB	'C'+80H
 	ENDM
 	ENDM
 
+DEFLINE	MACRO	STR
+	DB	'STR'
+	IF	CPM
+	  DB	0DH,0AH
+	ENDIF
+	IF	LSDOS6
+	  DB	0AH
+	ENDIF
+	ENDM
 
+	IF	LSDOS6
+$SVC	  MACRO	#NUM
+	   LD	A,#NUM
+	   RST	28H
+	  ENDM
+	ENDIF
 
-D0000	EQU	0000H
-D0001	EQU	0001H
-D0005	EQU	0005H
-D005C	EQU	005CH
+BOOT	EQU	0000H
+BDOS	EQU	0005H
 D007C	EQU	007CH
 D0080	EQU	0080H
 CMDLINE	EQU	0082H
-D0100	EQU	0100H
-D0300	EQU	0300H
-D0AE9	EQU	0AE9H
-D2000	EQU	2000H
-D3800	EQU	3800H
-D5000	EQU	5000H
-D6FFF	EQU	6FFFH
-SINUS	EQU	7100H		; Sinus Table (values are signed in high nibble) (phase Y)
-D7161	EQU	7161H
-PITCH_CONTOUR	EQU	7461H	; (phase X)
-D7FFF	EQU	7FFFH
-D86FE	EQU	86FEH
-D8FFF	EQU	8FFFH
 
 
-	ORG	9000H
+	IF	CPM
+	  ORG	0100H
+	ENDIF
+
+	IF	LSDOS6
+	  ORG	3000H
+	ENDIF
+
+;==================================================================================================
+;	S T A R T U P
+;==================================================================================================
+
+
 ENTRY:	; CP/M entry point at 0100H
-	LD	HL,D0100
-	LD	DE,ENTRY	; CP/M entry point at 0100H
-	LD	BC,D2000
-	LDIR
-	JP	ENTRY1		; Program entry point after move to 9000H
+	$BREAK
+	IF	LSDOS6
+	  EX	DE,HL		; Save HL = command line args ptr
+	ENDIF
 
-ENTRY1:	; Program entry point after move to 9000H
-	LD	HL,STACKEND	; end of stack, begin of garbage
+	LD	HL,STACK	; stack
 	LD	SP,HL
-	LD	HL,D6FFF
-	LD	DE,D8FFF
-	LD	BC,D5000
-	LDDR
-	LD	HL,D7FFF
-	LD	DE,D8FFF
-	LD	BC,D3800
-	LDDR
-	LD	HL,D7161
-	LD	DE,SINUS	; Sinus Table (values are signed in high nibble) (phase
-	LD	BC,D0300
-	LDIR
+
 	XOR	A
-	LD	(LA6F9),A
-	LD	A,(D0080)
-	CP	00H
-	JP	Z,SHOWHELP	; show help and exit
+	LD	(INPUT_BUFFER_LEN),A
+
+	IF	CPM
+	  LD	A,(D0080)	; Parameters length
+	  CP	00H		; == 0 ?
+	ENDIF
+	IF	LSDOS6
+	  EX	DE,HL		; Recover HL = command line args ptr
+	  LD	(CMDLINE_ADDR),HL
+	  LD	A,(HL)		; Parameters first byte
+	  CP	0DH		; CR ?
+	ENDIF
+
+	JP	Z,SHOWHELP	; If no parameters, show help and exit
 	CALL	CHECK_INPUT_SOU	; try to open specified file. On fail input comes from
 	LD	A,00H
 	LD	(SPEECHBUFFERLEN),A; Number of chars in speech buffer
@@ -158,11 +200,23 @@ END_READ:
 	LD	A,(SOURCE)	; source: 0x00 = command line, 0xff = file
 	CP	00H
 	JR	Z,END_READ_EXIT
-	LD	DE,D005C
-	LD	C,10H
-	CALL	D0005
+	LD	DE,FCB
+	IF	CPM
+	  LD	C,10H		; Close file
+	  CALL	BDOS
+	ENDIF
+	IF	LSDOS6
+	  $BREAK
+	  $SVC	60		; @CLOSE
+	ENDIF
 END_READ_EXIT:
-	JP	D0000
+	IF	CPM
+	  JP	0000H
+	ENDIF
+	IF	LSDOS6
+	  LD	HL,0		; no error
+	  $SVC	22		; @EXIT
+	ENDIF
 
 FOUND_NEWLINE:			; found CR or LF
 	CALL	PLAY_BUFFER	; play 0x8700 buffer and reset STORE_ADDR and 0x86ff
@@ -242,28 +296,44 @@ GET_NEXT_CHAR:	; get next char (ret in A)
 	LD	A,(HL)
 	INC	HL
 	LD	(CMDLINE_ADDR),HL; address of next character to read from command line
+
+	IF	LSDOS6
+	  CP	0DH		; LS-DOS command line terminates with CR
+	  RET	NZ
+	  XOR	A		; Change it to 0
+	ENDIF
+
 	RET
 
 GET_NEXT_CHAR_F:	; get next char from file (ret in A)
-	LD	A,(BLOCKPOS)	; position inside file block (0..127)
-	CP	80H
-	CALL	Z,LOAD_FILE_BLOCK; load a new block (128 bytes) into 0x0080
-	LD	A,(BLOCKPOS)	; position inside file block (0..127)
-	ADD	A,80H
-	LD	L,A
-	LD	H,00H
-	LD	A,(HL)
-	LD	HL,BLOCKPOS	; position inside file block (0..127)
-	INC	(HL)
+	IF	CPM
+	  LD	A,(BLOCKPOS)	; position inside file block (0..127)
+	  CP	80H
+	  CALL	Z,LOAD_FILE_BLOCK; load a new block (128 bytes) into 0x0080
+	  LD	A,(BLOCKPOS)	; position inside file block (0..127)
+	  ADD	A,80H
+	  LD	L,A
+	  LD	H,00H
+	  LD	A,(HL)
+	  LD	HL,BLOCKPOS	; position inside file block (0..127)
+	  INC	(HL)
+	ENDIF
+	IF	LSDOS6
+	  LD	DE,FCB		; File control block
+	  $SVC	3		; @GET - read one byte from file
+	  RET	Z		; if success
+	  XOR	A		; End of file => return 0
+	  RET
+	ENDIF
 	RET
 
 LOAD_FILE_BLOCK:	; load a new block (128 bytes) into 0x0080
-	LD	DE,D005C
+	LD	DE,FCB
 	LD	C,14H
-	CALL	D0005
+	CALL	BDOS
 	CP	00H
 	JR	Z,X_LOAD_FILE_BLO
-	LD	A,1AH
+	LD	A,1AH		; End of file (Ctrl-Z)
 	LD	(D0080),A
 X_LOAD_FILE_BLO:
 	LD	A,00H
@@ -300,10 +370,18 @@ PLAY_BUFFER_EXI:
 	RET
 
 SHOWHELP:	; show help and exit
-	LD	DE,MSG_HELP	; Help text
-	LD	C,09H
-	CALL	D0005
-	JP	D0000
+	IF CPM
+	  LD	DE,MSG_HELP	; Help text
+	  LD	C,09H
+	  CALL	BDOS
+	  JP	0000H
+	ENDIF
+	IF	LSDOS6
+	  LD	HL,MSG_HELP
+	  $SVC	10		; @DSPLY - display text @HL
+	  LD	HL,0		; No error exit
+	  $SVC	22		; @EXIT
+	ENDIF
 
 CALC_PITCH:
 	PUSH	BC
@@ -319,14 +397,30 @@ LOAD_SPEED:
 	LD	(SAMPLES_CTR),A	; samples counter (mem45)
 	RET
 
-CHECK_INPUT_SOU:	; try to open specified file. On fail input comes from comma
-	LD	DE,D005C
-	LD	C,0FH
-	CALL	D0005
-	CP	0FFH
-	RET	Z
-	LD	A,00H
-	LD	(D007C),A
+CHECK_INPUT_SOU:	; try to open specified file. On fail input comes from command line
+	IF	CPM
+	  LD	DE,FCB
+	  LD	C,0FH
+	  CALL	BDOS
+	  CP	0FFH
+	  RET	Z
+	  LD	A,00H
+	  LD	(D007C),A	; used ?
+	ENDIF
+	IF	LSDOS6
+	  $BREAK
+	  LD	DE,FCB		; File control block
+	  PUSH	DE
+	  $SVC	78		; @FSPEC - extract filespec from @HL to @DE
+	  POP	DE
+	  LD	HL,FCB_BUF	; Sector buffer
+	  LD	B,1		; use @GET to read the file
+	  $SVC	59		; @OPEN - open existing file @DE
+	  JR	Z,OPEN_OK
+	  CP	2AH		; LRL mismatch error code
+	  RET	NZ
+OPEN_OK:
+	ENDIF
 	LD	A,0FFH
 	LD	(SOURCE),A	; source: 0x00 = command line, 0xff = file
 	RET
@@ -357,32 +451,30 @@ L_ASSIGN_PITCH_:
 	JR	NZ,L_ASSIGN_PITCH_
 	RET			; done
 
-	DS	47*8		; slack
-
 
 MSG_HELP:	; Help text
-	DB	'Reengineered by Fabrizio Di Vittorio',0DH,0AH
-	IF	SIGNIT
-	DB	'TRS-80 Orchestra-90 version by GmEsoft',0DH,0AH
+	DEFLINE	"Reengineered by Fabrizio Di Vittorio"
+	DEFLINE	"Re-reengineered by GmEsoft"
+	IF	ORCH90
+	DEFLINE	"TRS-80 Orchestra-90 version by GmEsoft"
 	ENDIF
-	DB	'Specify English text, Phonemes (inside brackets) or filename to speech.',0DH,0AH
-	DB	'Parameters:',0DH,0AH
-	DB	'  |p => pitch (0..255)',0DH,0AH
-	DB	'  |s => speed (0..225)',0DH,0AH
-	DB	'Examples:',0DH,0AH
-	DB	'  say Hello world!! I''m a [KUMPYUW4TER]',0DH,0AH
-	IF	ORIGNL
-	DB	'  say |p20 high pitch |p120 slow pitch',0DH,0AH
-	ELSE
-	DB	'  say |p20 high pitch |p120 low pitch ',0DH,0AH
+	DEFLINE	"Specify English text, Phonemes (inside brackets) or filename to speech."
+	DEFLINE	"Parameters:"
+	DEFLINE	"  |p => pitch (0..255)"
+	DEFLINE	"  |s => speed (0..225)"
+	DEFLINE	"  |m => monotone output (0,1)"
+	DEFLINE	"Examples:"
+	DEFLINE	"  say Hello world!! I''m a [KUMPYUW4TER]"
+	DEFLINE	"  say |p20 high pitch |p120 low pitch "
+	DEFLINE	"  say |s32 fast speed |s100 slow speed"
+	DEFLINE	"  say |m1 song mode |m0 normal mode"
+	DEFLINE	"  say speech.txt"
+	DEFLINE	""
+	IF	CPM
+	  DB	'$'
 	ENDIF
-	DB	'  say |s32 fast speed |s100 slow speed',0DH,0AH
-	DB	'  say speech.txt',0DH,0AH,0DH,0AH,'$'
-
-	IF	SIGNIT
-	 DS	6		; slack
-	ELSE
-	 DS	46		; slack
+	IF	LSDOS6
+	  DB	3
 	ENDIF
 
 
@@ -415,17 +507,14 @@ BLOCKPOS:	; position inside file block (0..127)
 
 	DB	80H
 
-	DS	32		; slack
-
 RESET_BIT7:	; Reset high bit of A (doesn't need a subroutine...)
 	RES	7,A
 	RET
 
-	DC	480,'+'		; slack
+	DS	80H		; Stack
 
 	; end of stack, begin of garbage
-STACKEND:
-	DC	132,'-'		; slack
+STACK	EQU	$
 
 
 ;==================================================================================================
@@ -434,13 +523,13 @@ STACKEND:
 
 
 PROCESS_ENGLISH:	; Process English string
-	LD	BC,D0001
-	LD	DE,D0000
+	LD	BC,0001H
+	LD	DE,0000H
 	LD	HL,ENGLISH_BUFFER; English buffer
 	LD	(HL),0A0H
 L_PROCESS_ENGLI:
-	LD	IX,SPEECH_BUFFER; Speech buffer
-	LD	IY,ENGLISH_BUFFER; English buffer
+	LD	IX,SPEECH_BUFFER; Speech buffer (256 bytes)
+	LD	IY,ENGLISH_BUFFER; English buffer (256 bytes)
 	CALL	IXDE_TO_IYBC	; move byte from (IX+DE) to (IY+BC)
 	INC	C
 	INC	E
@@ -985,8 +1074,6 @@ GET_RHS:	; Get RHS address: &CHARFLAGS[ENGLISH_BUFFER[MEM58+1]]
 	INC	C
 	JR	J_GET_LHS
 
-	DS	15		; slack
-
 
 ;==================================================================================================
 ;	P H O N E M E S
@@ -1006,7 +1093,7 @@ PROCESS_PHONEME:		; Process Phonemes string (S9b61_say_main)
 	CALL	ADJUST_LENGTH	; Rules based length adjustments
 	CALL	EXT_STOP_CONS	; Extend stop consonants
 	LD	HL,PHONEMEINDEX	; Phonemes buffer (L9be0_phonemeIndex)
-	LD	BC,D0000	; count phonemes
+	LD	BC,0000H	; count phonemes
 L9B01:	LD	A,(HL)		; get phoneme ID
 	CP	50H		; valid ?
 	JR	NC,L9B0C	; exit loop if not
@@ -1023,20 +1110,14 @@ L9B0E:	CALL	INSERT_BREATH	; Insert breath
 SAY_UNINIT:	; if (error_pos != $ff) goto say_uninit
 	RET
 
-INPUT_FROM_CONS:	; unused ?
-	LD	DE,D86FE
-	LD	A,0FEH
-	LD	(D86FE),A
-	LD	C,0AH
-	CALL	D0005
 PREPROCESS_USER:	; 0x86ff = number of characters, 0x8700 = actual chars
 	LD	B,00H
 	LD	A,(SPEECHBUFFERLEN); Number of chars in speech buffer
 	LD	C,A
 	CP	B
 	JR	Z,L9B4A
-	LD	(LA6F9),A
-	LD	HL,LA6FA
+	LD	(INPUT_BUFFER_LEN),A
+	LD	HL,INPUT_BUFFER
 	ADD	HL,BC
 	EX	DE,HL
 	LD	HL,SPEECH_BUFFER; Speech buffer
@@ -1050,15 +1131,15 @@ L9B43:	LD	HL,SPEECH_BUFFER; Speech buffer
 	LD	(HL),8DH
 	JR	L9B5B
 
-L9B4A:	LD	A,(LA6F9)
+L9B4A:	LD	A,(INPUT_BUFFER_LEN)
 	CP	00H
 	JR	Z,L9B43
 	LD	C,A
-	LD	HL,LA6FA
-	LD	DE,SPEECH_BUFFER; Speech buffer
+	LD	HL,INPUT_BUFFER
+	LD	DE,SPEECH_BUFFER; Speech buffer (256 bytes)
 	INC	BC
 	LDIR
-L9B5B:	LD	A,(LA6F9)
+L9B5B:	LD	A,(INPUT_BUFFER_LEN)
 	LD	C,A
 	LD	HL,SPEECH_BUFFER; Speech buffer
 	ADD	HL,BC
@@ -1128,8 +1209,8 @@ L9B63:	XOR	A
 PARSER1:	; Parse 'input[]' and populate 'phonemeIndex[]'
 	XOR	A
 	LD	(MEM66),A	; (mem66)
-	LD	BC,D0000
-	LD	DE,D0000
+	LD	BC,0000H
+	LD	DE,0000H
 	LD	HL,STRESS	; Phoneme stress values buffer (L9de0_stress)
 L1_PARSER1:	; Clear the stress table
 	LD	(HL),B
@@ -1247,12 +1328,22 @@ L9BFF:	CP	(HL)
 	; Failed to parse => error
 	LD	A,C
 	LD	(ERROR_POS),A	; Error position
-	LD	E,07H
-	LD	C,02H
-	CALL	D0005
-	LD	E,07H
-	LD	C,02H
-	CALL	D0005
+	IF	CPM
+	  LD	E,07H
+	  LD	C,02H
+	  CALL	BDOS
+	  LD	E,07H
+	  LD	C,02H
+	  CALL	BDOS
+	ENDIF
+	IF	LSDOS6
+	  LD	B,00H
+	  $SVC	104		; @SOUND
+	  LD	B,03H
+	  $SVC	104		; @SOUND
+	  LD	B,06H
+	  $SVC	104		; @SOUND
+	ENDIF
 	RET
 
 J4_PARSER1:	; Set the stress for the prior phoneme
@@ -1728,7 +1819,7 @@ L9E53:	LD	HL,MEM66	; (mem66)
 ; SET_PHONM_LNGTH: Change phonemeLength depedendent on stress
 SET_PHONM_LNGTH:
 	LD	B,00H
-	LD	DE,D0000
+	LD	DE,0000H
 L9E5E:	LD	HL,PHONEMEINDEX	; Phonemes buffer (L9be0_phonemeIndex)
 	ADD	HL,DE
 	LD	A,(HL)
@@ -1765,7 +1856,7 @@ L9E7C:	ADD	HL,BC
 ;	<VOICED STOP CONSONANT> {optional silence} <STOP CONSONANT> - shorten both to 1/2 + 1
 ;	<LIQUID CONSONANT> <DIPHTONG> - decrease by 2
 ADJUST_LENGTH:	; Rules based length adjustments
-	LD	BC,D0000
+	LD	BC,0000H
 	LD	D,00H
 L9E8B:	LD	HL,PHONEMEINDEX	; Phonemes buffer (L9be0_phonemeIndex)
 	ADD	HL,BC
@@ -1811,7 +1902,7 @@ L9ECB:	LD	HL,PHONEMELENGTHS; Phoneme lengths buffer
 	LD	(HL),A
 	SRL	A
 	ADD	A,(HL)
-	ADC	A,01H		; Why ADC ?
+	ADD	A,01H		; Why ADC ?
 	LD	HL,PHONEMELENGTHS; Phoneme lengths buffer
 	ADD	HL,BC
 	LD	(HL),A
@@ -1856,7 +1947,7 @@ L9EEE:	LD	C,(HL)
 	SRL	A
 	SRL	A
 	ADD	A,(HL)
-	ADC	A,01H		; why ADC ?
+	ADD	A,01H
 	LD	HL,PHONEMELENGTHS; Phoneme lengths buffer
 	ADD	HL,BC
 	LD	(HL),A
@@ -2235,8 +2326,8 @@ RCL_ACE:
 ; copy the phoneme ids, the lengths and the stress values to the
 ; output table, and render them to audio.
 PREPAREOUTPUT:
-	LD	BC,D0000
-	LD	DE,D0000
+	LD	BC,0000H
+	LD	DE,0000H
 L1_PREP_OUTPUT:	; Prepare output main phonemes loop
 	LD	IX,PHONEMEINDEX	; Phonemes buffer (L9be0_phonemeIndex)
 	ADD	IX,BC
@@ -2296,17 +2387,17 @@ LA1B4:	LD	IY,PHONINDEX_OUT; phonemes table for output (PhonemeIndexOutput)
 ;
 ;void Code47574()
 RENDER:	; render the phoneme
+	IF	LSDOS6
+	  DI			; Disable interrupts for LS-DOS 6
+	ENDIF
 	PUSH	BC		; save the table indexes
 	PUSH	DE
+
 	LD	A,(PHONINDEX_OUT);phonemes table for output (PhonemeIndexOutput)
 	CP	0FFH		; end of table ?
-	JR	NZ,RENDER1	; jump if not
-	POP	DE		; restore the table indexes
-	POP	BC
-	RET			; and return
+	JP	Z,X_RENDER	; Jump if yes
 
-RENDER1:
-	LD	BC,D0000	; init the phoneme index
+	LD	BC,0000H	; init the phoneme index
 	XOR	A
 	LD	(PHONEME_INDEX),A; phoneme index (mem44)
 
@@ -2344,6 +2435,8 @@ LA207:	LD	HL,STRESS_OUT	; stress output table for output (stressOutput)
 	LD	(PHASE2),A	; Phase2/number of frames to write (mem42)
 	LD	D,00H
 	LD	HL,PHASE1	; Phase1/stress amount index (mem43)
+
+	; TODO: What is this?
 	LD	E,(HL)
 	INC	E
 	LD	IX,STRESS_AMOUNTS; stress amount (add to pitch) (tab47492)
@@ -2525,7 +2618,7 @@ CREAT_TRNSTIONS:	;if terminal phoneme, exit the loop; create transitions
 	LD	A,00H
 	LD	(PHONEME_INDEX),A; phoneme index (mem44)
 	LD	(MEM49),A	; (mem49)
-	LD	BC,D0000
+	LD	BC,0000H
 LA29E:	LD	IX,PHONINDEX_OUT; phonemes table for output (PhonemeIndexOutput)
 	ADD	IX,BC
 	LD	E,(IX+0)
@@ -2598,7 +2691,7 @@ LA2FF:	LD	A,(PHONEME_INDEX); phoneme index (mem44)
 LA333:	LD	A,(LA6DA)
 	LD	(LA6DC),A
 	LD	A,(SAMPLES_PTR_HI); samples pointer high byte (mem47)
-	CP	74H
+	CP	HIGH PITCH_CONTOUR
 	JR	NZ,LA39C
 	LD	D,00H
 	LD	A,(PHONEME_INDEX); phoneme index (mem44)
@@ -2699,7 +2792,7 @@ LA3FC:	LD	A,(INFLEX_DIR)	; Inflexion direction (mem48)
 LA406:	LD	HL,SAMPLES_PTR_HI; samples pointer high byte (mem47)
 	INC	(HL)
 	LD	A,(HL)
-	CP	7BH
+	CP	HIGH CONSONANTFLAG; stop at consonant flags
 	JP	NZ,LA333
 LA410:	LD	HL,PHONEME_INDEX; phoneme index (mem44)
 	INC	(HL)
@@ -2715,19 +2808,13 @@ LA418:	LD	D,00H
 	ADD	A,(HL)
 	LD	(INFLEX_DIR),A	; Inflexion direction (mem48)
 	CALL	ASSIGN_PITCH_CO	; Avoids monotone output (disabled for songs)
-	JR	LA43A
 
-	DB	00H,00H,00H,00H,00H,00H,00H,00H
-	DB	00H,00H,00H,00H
-
-LA43A:	LD	A,00H
+	LD	A,00H
 	LD	(PHASE3),A	; Phase3 (mem41)
 	LD	(PHASE2),A	; Phase2/number of frames to write (mem42)
 	LD	(PHASE1),A	; Phase1/stress amount index (mem43)
 	LD	(MEM49),A	; (mem49)
 	CALL	LOAD_SPEED
-	NOP
-	NOP
 
 	; RESCALE AMPLITUDE
 	;
@@ -2738,7 +2825,7 @@ LA43A:	LD	A,00H
 	; mem56 tracks how many amplitude tables are remaining for rescale
 	LD	HL,AMPLITUDE1	; Amplitude 1 frames
 	LD	B,00H
-	LD	DE,D0300
+	LD	DE,0300H
 LA455:	LD	C,(HL)
 	LD	IX,AMPLITUDERESCAL
 	ADD	IX,BC
@@ -2832,14 +2919,8 @@ L_SOUNDOUT2:	; vowel output loop
 	LD	A,(DE)		; get multtable
 	EXX
 	ADD	A,B		; sum the 3 formants
-
-	IF	FIXADC		; No need to use ADC here ...
 	ADD	A,C
 	ADD	A,DACOFFS
-	ELSE
-	ADC	A,C
-	ADC	A,DACOFFS
-	ENDIF
 
 	OUT	(DACPORT),A	; output the wave
 	LD	HL,SAMPLES_CTR	; samples counter (mem45)
@@ -2850,10 +2931,8 @@ L_SOUNDOUT2:	; vowel output loop
 	INC	E
 	LD	HL,INFLEX_DIR	; Inflexion direction (mem48)
 	DEC	(HL)
-LA4DA:	JR	Z,LA508
+LA4DA:	JR	Z,X_RENDER
 	CALL	LOAD_SPEED
-	NOP
-	NOP
 LA4E1:	LD	HL,PHONEME_INDEX; phoneme index (mem44)
 	DEC	(HL)
 	JR	NZ,LA50B
@@ -2873,8 +2952,12 @@ LA4EA:	LD	HL,PITCH_CONTOUR;
 	LD	(PHASE1),A	; Phase1/stress amount index (mem43)
 	JP	L_SOUNDOUT2	; vowel output loop
 
-LA508:	POP	DE
+X_RENDER:
+	POP	DE		; restore the table indexes
 	POP	BC
+	IF	LSDOS6
+	  EI			; Re-enable interrupts for LS-DOS 6
+	ENDIF
 	RET
 
 LA50B:
@@ -3218,7 +3301,7 @@ MSG_CRLF:
 PLAY_BELL:	; Send <BEL> to console
 	LD	E,07H
 	LD	C,02H
-	JP	D0005
+	JP	BDOS
 
 SETHIGHBIT:	; put "1" in bit 7 of all bytes in (HL), for "C" bytes
 	SET	7,(HL)
@@ -3226,6 +3309,11 @@ SETHIGHBIT:	; put "1" in bit 7 of all bytes in (HL), for "C" bytes
 	DEC	C
 	JR	NZ,SETHIGHBIT	; put "1" in bit 7 of all bytes in (HL), for "C" bytes
 	RET
+
+
+;==================================================================================================
+;	V A R I A B L E S
+;==================================================================================================
 
 	DB	00H
 LA6D8:	DB	00H
@@ -3245,7 +3333,7 @@ PHONEME_INDEX:	; phoneme index (mem44)
 SAMPLES_CTR:	; samples counter (mem45)
 	DB	00H
 SAMPLES_PTR:	; samples pointer (mem46)
-	DW	D0000
+	DW	0000H
 SAMPLES_PTR_HI:	EQU	$-1
 INFLEX_DIR:	; Inflexion direction (mem48)
 	DB	00H
@@ -3274,7 +3362,7 @@ MEM60:	; Phoneme code to insert (mem60)
 MEM61:	; (mem61)
 	DB	00H
 MEM62:	; Rule LSB or word (mem62)
-	DW	D0000
+	DW	0000H
 MEM63:	EQU	$-1
 MEM64:	; (mem64_sign2)
 	DB	00H
@@ -3285,16 +3373,13 @@ MEM66:	; (mem66)
 ERROR_POS:	; Error position
 	DB	00H
 LA6F8:	DB	00H
-LA6F9:	DB	00H
-
-LA6FA:
-	DC	4102,'*'	; slack
+INPUT_BUFFER_LEN:	DB	00H		; Command line/Input buffer length
 
 
+;==================================================================================================
+;	D A T A   T A B L E S
+;==================================================================================================
 
-	PHASE	5800H
-
-	DS	161		; slack
 
 ; Character flags (ASCII 00H-5FH)
 CF_NONE		EQU	00H	; No flag set
@@ -3347,9 +3432,6 @@ CHARFLAGS:	; English characters flags (tab36376)
 	DB	CF_NAMEDCHAR					; '^'
 	DB	CF_NONE						; '_'
 
-ENGLISH_BUFFER:	; English buffer
-	DC	158*8+4,'E'	; slack
-
 RULESPTR_LSB:	; Letters rules pointers LSB table
 	DB	LOW RULES_A,LOW RULES_B,LOW RULES_C,LOW RULES_D
 	DB	LOW RULES_E,LOW RULES_F,LOW RULES_G,LOW RULES_H
@@ -3369,7 +3451,6 @@ RULESPTR_MSB:	; Letters rules pointers MSB table
 	DB	HIGH RULES_Y,HIGH RULES_Z
 
 RULESPTR_END:	; Letters rules pointers table end
-	DC	65,'R'		; slack
 
 RULES2:	; Rules2: digits and symbols
 	DEFRULE	"(A)="
@@ -3914,14 +3995,9 @@ RULES_Z:	; Rules for 'Z'
 
 RULES_END:	; End of Rules
 
-	DC	38*8+3,'?'	; slack
+	DS	LOW( 100H - LOW $ ) ; Align on page boundary
 
-
-	DEPHASE
-
-
-	PHASE	SINUS		; 7100H
-;SINUS:	; Sinus table (signed 4-bit values in high nibble)
+SINUS:	; Sinus table (signed 4-bit values in high nibble)
 
 	ASSERT	LOW $ = 0	; Must be on page boundary
 
@@ -4002,39 +4078,6 @@ MULTTABLE:	; Multiply Table (Signed 8-bit = signed 4-bit * signed 4-bit
 	DB	0FCH,0FBH,0FBH,0FAH,0FAH,0F9H,0F9H,0F8H
 
 
-
-	DEPHASE
-
-
-	PHASE	PITCH_CONTOUR	; 7461H
-
-	DC	256,'0'		; slack
-
-FREQUENCY1:	; Frequency 1 frames
-	ASSERT	$ = PITCH_CONTOUR+0100H ; Must immediately follow PITCH_CONTOUR
-	DC	256,'1'		; slack
-
-FREQUENCY2:	; Frequency 2 frames
-	DC	256,'2'		; slack
-
-FREQUENCY3:	; Frequency 3 frames
-	DC	256,'3'		; slack
-
-	; Amplitude 1 frames
-	; signed 4-bit values in low nibble
-AMPLITUDE1:	; Amplitude 1 frames
-	DC	256,'4'		; slack
-
-AMPLITUDE2:	; Amplitude 2 frames
-	ASSERT	$ = AMPLITUDE1+0100H ; Must immediately follow AMPLITUDE1
-	DC	256,'5'		; slack
-
-AMPLITUDE3:	; Amplitude 3 frames
-	ASSERT	$ = AMPLITUDE2+0100H ; Must immediately follow AMPLITUDE2
-	DC	256,'6'		; slack
-
-CONSONANTFLAG:	; Consonants flags frames
-	DC	256,'7'		; slack
 
 FREQ1DATA:
 	; Formant 1 frequencies (throat)
@@ -5219,40 +5262,6 @@ SAMPLETABLE_400:	; Sample table for /X
 	DB	06H,0E0H,07H,0E0H,0FH,0F8H,06H,0C1H
 	DB	0FEH,01H,0FCH,03H,0E0H,0FH,00H,0FCH
 
-PHONINDEX_OUT:	; phonemes table for output (PhonemeIndexOutput)
-	DB	0FFH,26H,17H,07H,1EH,05H,45H,46H
-	DB	47H,10H,14H,45H,46H,47H,0BH,4BH
-	DB	4CH,4DH,01H,0FFH,12H,1EH,0AH,20H
-	DB	36H,37H,38H,05H,2AH,2BH,1FH,0FFH
-	DB	4DH,01H,0FFH,0D6H,0A0H,0A0H,0AEH,0A0H
-	DB	0C9H,0A0H,0BDH,0A0H,0A0H,0C5H,0C4H,0ACH
-	DB	0A0H,0A4H,0A0H,0A0H,0A0H,0ADH,8FH,0C6H
-	DB	0B0H,0CEH,0A0H,80H
-
-STRESS_OUT:	; stress output table for output (stressOutput)
-	DB	00H,00H,05H,04H,00H,00H,00H,00H
-	DB	00H,00H,00H,07H,07H,07H,06H,00H
-	DB	00H,00H,00H,05H,00H,00H,00H,00H
-	DB	05H,05H,05H,04H,00H,00H,00H,00H
-	DB	00H,00H,0D3H,0D3H,0E9H,0A0H,0E8H,0B1H
-	DB	0A0H,0A3H,0A0H,0E1H,0C7H,0A4H,0BBH,0A0H
-	DB	8AH,0A0H,97H,0A0H,0CAH,0FFH,0A0H,9DH
-	DB	0A0H,8AH,0A0H,0E0H
-
-PHONLENGTH_OUT:	; phoneme lengths table for output (phonemeLengthOutput)
-	DB	0BH,06H,0AH,0BH,02H,08H,04H,02H
-	DB	02H,0AH,08H,06H,02H,02H,16H,0AH
-	DB	01H,04H,12H,0DH,0AH,02H,06H,02H
-	DB	08H,01H,02H,0BH,06H,02H,04H,01H
-	DB	04H,12H,0A0H,97H,0D0H,0A0H,0A0H,0A0H
-	DB	0EFH,0B5H,97H,0A0H,0A0H,0D1H,0C1H,0A9H
-	DB	0A0H,0A5H,0A0H,0A0H,82H,0A0H,0A5H,0A0H
-	DB	0AFH,0B6H,0A0H,0C3H,0AAH,79H,7DH,7DH
-	DB	7DH,7DH,7DH,7DH,7DH,7FH,7DH,7DH
-	DB	7FH,7DH,7DH,7DH,7FH,01H,00H,00H
-	DB	7FH,7FH,7FH,7FH,0F8H,7FH,7FH,7FH
-	DB	7FH,7FH,7FH,7FH,0A0H,96H,0A0H,0A0H
-	DB	0B5H,0D4H,85H,0A0H
 
 AMPLITUDERESCAL:
 	DB	00H,01H,02H,02H,02H,03H,03H,04H
@@ -5260,40 +5269,10 @@ AMPLITUDERESCAL:
 
 STRESS_AMOUNTS:	; stress amount (add to pitch) (tab47492)
 	DB	00H,00H,0E0H,0E6H,0ECH,0F3H,0F9H,00H
-	DB	06H,0CH,06H,0A0H,00H,24H,0F2H,10H
-	DB	09H,38H,0A9H,00H,0E5H,0F2H,85H,0F2H
-	DB	0A0H,80H,84H,0EFH,0A9H,00H,0A2H,08H
-	DB	06H,0F2H,2AH,0C5H,0F1H,90H,04H,0E5H
-	DB	0F1H,0E6H,0F2H,0CAH,0D0H,0F2H,85H,0F0H
-	DB	24H,0EFH,10H,07H,38H,0A9H,00H,0E5H
-	DB	0F2H,85H,0F2H,60H,0A2H,1FH,0B5H,0E0H
-	DB	9DH,0D5H,85H,0CAH,0D0H,0F8H,60H,0A2H
-	DB	1FH,0BDH,0D5H,85H,95H,0E0H,0CAH,0D0H
-	DB	0F8H,60H,0C3H,0CFH,0D0H,0D9H,0D2H,0C9H
-	DB	0C7H,0C8H,0D4H,0A0H,0B1H,0B9H,0B8H,0B2H
-	DB	0A0H,0C4H,0CFH,0CEH,0ADH,21H,85H,0C9H
-	DB	0FFH,0D0H,01H,60H,0A9H,00H,0AAH,85H
-	DB	0E9H,0A4H,0E9H,0B9H,21H,85H,85H,0F5H
-	DB	0C9H,0FFH,0D0H,03H,4CH,0E9H,86H,0C9H
-	DB	01H,0D0H,03H,4CH,85H,89H,0C9H,02H
-	DB	0D0H,03H,4CH,8BH,89H,0B9H,5DH,85H
-	DB	85H,0E8H,0B9H,99H,85H,85H,0E7H,0A4H
-	DB	0E8H,0C8H,0B9H,0DH,86H,85H,0E8H,0A4H
-	DB	0F5H,0B9H,61H,7CH,9DH,61H,75H,0B9H
-	DB	0B1H,7CH,9DH,61H,76H,0B9H,01H,7DH
-	DB	9DH,61H,77H,0B9H,51H,7DH,9DH,61H
-	DB	78H,0B9H,0A1H,7DH,9DH,61H,79H,0B9H
-	DB	0F1H,7DH,9DH,61H,7AH,0B9H,0D1H,7FH
-	DB	9DH,61H,7BH,18H,0A9H,40H,65H,0E8H
-	DB	9DH,61H,74H,0E8H,0C6H,0E7H,0D0H,0C9H
-	DB	0E6H,0E9H,0D0H,95H,0A9H,00H,85H,0E9H
-	DB	85H,0EEH,0AAH,0BCH,21H,85H,0E8H,0BDH
-	DB	21H,85H,0C9H,0FFH,0D0H,03H,4CH,0FDH
-	DB	87H,0AAH
+	DB	06H,0CH,06H
+
 SPEECHBUFFERLEN:	; Number of chars in speech buffer
 	DB	0BDH
-SPEECH_BUFFER:
-	DC	88*8+1,'S'	; slack
 
 CONSONANT_TAB:	; table { 0x18, 0x1A, 0x17, 0x17, 0x17 } (tab48426)
 	DB	80H^80H^DACOFFS
@@ -5301,17 +5280,6 @@ CONSONANT_TAB:	; table { 0x18, 0x1A, 0x17, 0x17, 0x17 } (tab48426)
 	DB	70H^80H^DACOFFS
 	DB	70H^80H^DACOFFS
 	DB	6CH^80H^DACOFFS
-
-PHONEMEINDEX:	; Phonemes buffer (L9be0_phonemeIndex)
-	DC	254,'I'
-PHONEMEINDEXEND:	; End of Phoneme Index
-	DC	2,'J'
-PHONEMELENGTHS:	; Phoneme lengths (TODO: check)
-	ASSERT	$ = PHONEMEINDEX+0100H ; Must be PHONEMEINDEX+0100H
-	DC	256,'?'
-STRESS:	; stress value for each phoneme (L9de0_stress)
-	ASSERT	$ = PHONEMEINDEX+0200H ; Must be PHONEMEINDEX+0200H
-	DC	256,'S'
 
 STRESSINPUTTBL:	; stress input codes ('1'..'9')
 	DEFSTR8	"*123456789"
@@ -5519,7 +5487,82 @@ PHONM_FLAGS2:	;phoneme flags 2
 
 PHONM_FLAGS_END:	;end of phoneme flags
 
-	DC	574*8+2,'E'	; slack
+
+;==================================================================================================
+;	B U F F E R S
+;==================================================================================================
+
+	IF	CPM
+FCB	EQU	005CH
+FCB_END	EQU	007CH
+	ENDIF
+
+	IF	LSDOS6
+FCB	DS	0020H		; DOS file control block
+FCB_BUF	DS	0100H		; DOS sector buffer
+UREC	DS	0080H		; User record buffer
+	ENDIF
+
+PHONINDEX_OUT:	; phonemes table for output (PhonemeIndexOutput)
+	DS	60
+
+STRESS_OUT:	; stress output table for output (stressOutput)
+	DS	60
+
+PHONLENGTH_OUT:	; phoneme lengths table for output (phonemeLengthOutput)
+	DS	100
+
+	DS	LOW(100H-LOW $)	; Align to page
+PHONEMEINDEX:	; Phonemes buffer (L9be0_phonemeIndex)
+	DS	256
+PHONEMEINDEXEND	EQU	$-2	; End of Phoneme Index
+PHONEMELENGTHS:	; Phoneme lengths (TODO: check)
+	ASSERT	$ = PHONEMEINDEX+0100H ; Must be PHONEMEINDEX+0100H
+	DS	256
+STRESS:	; stress value for each phoneme (L9de0_stress)
+	ASSERT	$ = PHONEMEINDEX+0200H ; Must be PHONEMEINDEX+0200H
+	DS	256
+
+INPUT_BUFFER:
+	DS	256		; buffer
+
+ENGLISH_BUFFER:	; English buffer
+	DS	256
+
+SPEECH_BUFFER:
+	DS	256
+
+; The 8 following buffers must be 256-bytes and contiguous.
+	DS	LOW(100H-LOW $)	; Align to page
+
+PITCH_CONTOUR:
+	DS	256
+
+FREQUENCY1:	; Frequency 1 frames
+	DS	256
+
+FREQUENCY2:	; Frequency 2 frames
+	DS	256
+
+FREQUENCY3:	; Frequency 3 frames
+	DS	256
+
+	; Amplitude 1 frames
+	; signed 4-bit values in low nibble
+AMPLITUDE1:	; Amplitude 1 frames
+	DS	256
+
+AMPLITUDE2:	; Amplitude 2 frames
+	DS	256
+
+AMPLITUDE3:	; Amplitude 3 frames
+	DS	256
+
+CONSONANTFLAG:	; Consonants flags frames
+	DS	256
+
+END_FRAMES:	; End of frames data
+	ASSERT	$ = PITCH_CONTOUR+0800H ;
 
 
 	END	ENTRY
