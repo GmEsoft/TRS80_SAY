@@ -1,8 +1,9 @@
 Say
 ===
 
-S.A.M.-based text-to-speech voice synthesizer
----------------------------------------------
+S.A.M.-based text-to-speech voice synthesizer,<br>for TRS-80 CP/M and LS-DOS 6 and Orchestra-90
+-----------------------------------------------------------------------------------------------
+
 
 This is a S.A.M.-based text-to-speech voice synthesizer for CP/M and LS-DOS 6.3. Adapted to work on the TRS-80 
 Model 4(p) with the Orchestra-90 sound adapter.
