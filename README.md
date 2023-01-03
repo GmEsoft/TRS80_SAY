@@ -9,7 +9,7 @@ S.A.M.-based text-to-speech voice synthesizer,<br>for TRS-80 CP/M and LS-DOS 6 a
 This is a S.A.M.-based text-to-speech voice synthesizer for CP/M and LS-DOS 6.3. Adapted to work on the TRS-80 
 Model 4(p) with the Orchestra-90 sound adapter.
 
-Based on SPEECH.COM for Bondwell 12/14, and on an improved version SAY.COM by Fabrizio Di Vittorio, it has been 
+Based on SPEECH.COM for Bondwell 12/14, and on an improved version [SAY.COM](https://github.com/fdivitto/SAY) by Fabrizio Di Vittorio, it has been 
 further reworked to reduce the size of the binary executable, and to port it to TRS-80 Model 4 with Orchestra-90 
 running on CP/M or LS-DOS 6.3.
 
