@@ -1,4 +1,4 @@
-; 	** CP/M SAY.COM - LS-DOS 6 SAY/CMD **
+; 	** CP/M SAY.COM - LS-DOS 6 SAY/CMD and SAY/DVR **
 ;
 ;	Assemble using ZMAC from http://48k.ca/zmac.html
 ;	- For CP/M (Bondwell 12/14 CP/M):
@@ -7,8 +7,13 @@
 ;	- For CP/M (Montezuma Micro CP/M 2.x) and Orchestra-90:
 ;		ZMAC --zmac SAY.ASM -P0=2 --od . --oo CIM,LST,BDS
 ;		and rename SAY.CIM to SAY.COM
-;	- For LS-DOS 6.3 and Orchestra-90:
-;		ZMAC --zmac SAY.ASM -P0=1 --od . --oo CMD,LST,BDS
+;	- For LS-DOS 6.3 and Orchestra-90 executable:
+;		ZMAC --zmac SAY.ASM -P0=3 --od . --oo CMD,LST,BDS
+;	- For LS-DOS 6.3 and Orchestra-90 driver:
+;		ZMAC --zmac SAY.ASM -P0=4 --od . --oo CIM,LST,BDS
+;		and rename SAY.CMD to SAY.DVR
+;		To load:
+;			SET *SY SAY
 
 
 
@@ -17,7 +22,7 @@
 ;	C O N F I G
 ;==================================================================================================
 
-_BREAK	EQU	0
+_BREAK	EQU	1
 
 	IF	@@0
 CONFIG	EQU	@@0
@@ -33,6 +38,8 @@ DACOFFS	  EQU	80H		; Wave output centered at 80H
 DACPORT	  EQU	50H		; Bondwell 12/14 audio out
 FIXQMRK	  EQU	0		; Don't fix "(?)=." rule
 ORCH90	  EQU	0		; Don't add ORCH90 signature
+EXEC	  EQU	1		; Executable Mode
+DRIVER	  EQU	0		; Driver Mode
 	ENDIF
 
 	IF	CONFIG = 2	; TRS-80 Model 4 CP/M + Orchestra 90
@@ -42,6 +49,8 @@ DACOFFS	  EQU	00H		; Wave output centered at 0
 DACPORT	  EQU	75H		; Orchestra 90 right channel
 FIXQMRK	  EQU	1		; Fix "(?)=." rule
 ORCH90	  EQU	1		; Add ORCH90 signature
+EXEC	  EQU	1		; Executable Mode
+DRIVER	  EQU	0		; Driver Mode
 	ENDIF
 
 	IF	CONFIG = 3	; TRS-80 Model 4 LS-DOS 6 + Orchestra 90
@@ -51,12 +60,28 @@ DACOFFS	  EQU	00H		; Wave output centered at 0
 DACPORT	  EQU	75H		; Orchestra 90 right channel
 FIXQMRK	  EQU	1		; Fix "(?)=." rule
 ORCH90	  EQU	1		; Add ORCH90 signature
+EXEC	  EQU	1		; Executable Mode
+DRIVER	  EQU	0		; Driver Mode
 	ENDIF
 
-	IFNDEF	CPM
+	IF	CONFIG = 4	; TRS-80 Model 4 /DVR for LS-DOS 6 + Orchestra 90
+CPM	  EQU	0		; CP/M version
+LSDOS6	  EQU	1		; LS-DOS version
+DACOFFS	  EQU	00H		; Wave output centered at 0
+DACPORT	  EQU	75H		; Orchestra 90 right channel
+FIXQMRK	  EQU	1		; Fix "(?)=." rule
+ORCH90	  EQU	1		; Add ORCH90 signature
+EXEC	  EQU	0		; Executable
+DRIVER	  EQU	1		; Driver Mode
+	ENDIF
+
+	IFNDEF	EXEC
 	 ASSERT	0		; Invalid config selected
 	 END
 	ENDIF
+
+;-----	Rules fixes
+FIXNINE	EQU	1		; Fix 'nineteen', 'ninety'
 
 
 ;==================================================================================================
@@ -144,13 +169,459 @@ CMDLINE	EQU	0082H
 	  ORG	3000H
 	ENDIF
 
+	IF	DRIVER
 ;==================================================================================================
-;	S T A R T U P
+;	L S - D O S   D R I V E R   L O A D E R
 ;==================================================================================================
+;
+;	Module will be loaded at 8000H in bank 1 if available
+;	Jumper will be loaded in LOW memory
+;
+LF	EQU	10
+CR	EQU	13
 
 
-ENTRY:	; CP/M entry point at 0100H
-	$BREAK
+@BANK	EQU	102		; RAM bank switching
+@CHNIO	EQU	20		; Device chain character I/O
+@DSP	EQU	2		; Character output to *DO (video display)
+@DSPLY	EQU	10		; Line output to *DO (video display)
+@EXIT	EQU	22		; Exit program with return code
+@FLAGS$	EQU	101		; Obtain system flags pointer
+@GTDCB	EQU	82		; Obtain DCB pointer given devspec
+@HIGH$	EQU	100		; Obtain or alter HIGH$/LOW$
+@LOGOT	EQU	12		; Display and log a message (*DO and *JL)
+@MSG	EQU	13		; Send a message line to a device
+
+DCB@GET	EQU	01H		; DCB can handle @GET
+DCB@PUT	EQU	02H		; DCB can handle @PUT
+DCB@CTL	EQU	04H		; DCB can handle @CTL
+DCB@NIL	EQU	08H		; DCB is a NIL device
+DCB@RUT	EQU	10H		; DCB is routed (R/O)
+DCB@LNK	EQU	20H		; DCB is linked (R/0)
+DCB@FLT	EQU	40H		; DCB is a filter
+DCB@FCB	EQU	80H		; DCB is actually a FCB
+
+
+
+
+;------------------------------------------------------------------------------
+;	M O D U L E   I N S T A L L E R
+;------------------------------------------------------------------------------
+
+ENTRY:
+;	$BREAK
+	PUSH	DE
+	POP	IX		; Get dcb
+	LD	(JMPDCB),DE	; Stuff DCB pointer
+	LD	HL,MSG_HELP
+	$SVC	@DSPLY		; Display title
+
+;*=*=*
+; Check if entry from SET command
+;*=*=*
+	$SVC	@FLAGS$		; Get flags pointer
+	BIT	3,(IY+'C'-'A')	; System request?
+	JP	Z,VIASET
+
+;*=*=*
+; Obtain low memory driver pointer.	Bizarre API here!
+;*=*=*
+	LD	E,'K'		; Locate pointer to *KI DCB
+	LD	D,'I'		; 	via @GTDCB SVC
+	$SVC	@GTDCB		; !!EI!!
+	JP	NZ,CURDL	; No error unless KI clobbered!
+	DEC	HL		; Decrement to driver pointer
+	LD	D,(HL)		; P/u hi-order of pointer,
+	DEC	HL		;	decrement to and p/u
+	LD	E,(HL)		;	lo-order of pointer
+	LD	(DEST),DE	; save dest address
+	LD	(LOWPTR),HL	; save pointer address
+
+;*=*=*
+; Check if driver will fit into [(LCPTR), X'12FF']
+;*=*=*
+	LD	HL,JMPEND-JMPBGN; Jumper length
+	ADD	HL,DE		;
+	LD	BC,1300H	; max address + 1
+	XOR	A		;
+	SBC	HL,BC		; space available in low mem?
+	JP	NC,NOLOW	; jump if yes
+
+;*=*=*
+; Move module to bank
+;*=*=*
+;	$BREAK
+	LD	BC,0207H	; B=reserve bank, C=max bank #
+FBANK:	LD	L,C		; Save bank #
+	$SVC	@BANK		; RAM bank switching: reserve bank
+	LD	C,L		; restore bank
+	JR	Z,FBNKOK	; Jump if successful
+	DEC	C		; Previous bank
+	JR	NZ,FBANK	; until all banks tested
+	JP	NOBANK		; No bank available error
+FBNKOK:	LD	A,C		; Put bank # in message
+	ADD	A,'0'		;
+	LD	(MSGBNKNUM),A	;
+	LD	B,3		; Reserve the bank
+	LD	L,C		; save bank #
+	$SVC	@BANK		; RAM bank switching: reserve bank
+	LD	C,L		; restore bank
+	EXX			; Save BC, reserved bank #
+	LD	HL,MODBGN	; Move banked module to bank
+	PUSH	HL		;
+	LD	DE,BUFFER	; 1st: from bank 0 to resident memory
+	PUSH	DE		;
+	LD	BC,MODEND-MODBGN; Banked module length
+	PUSH	BC		;
+	LDIR			; Move it
+	EXX			; Restore reserved bank
+	LD	B,0		; select bank
+	LD	(BANKNUM),BC	; save bank # in jumper
+	$SVC	@BANK		; RAM bank switching
+	EXX			; save BC=restore Bank 0
+	POP	BC		;
+	POP	HL		;
+	POP	DE		;
+	LDIR			; Move from resident memory to bank C
+
+	; Init say-dvr
+	XOR	A
+	LD	(INPUT_BUFFER_LEN),A
+	LD	(SPEECHBUFFERLEN),A; Number of chars in speech buffer
+
+	; End Init say-dvr
+	EXX			; restore BC to reselect bank 0
+	$SVC	@BANK		; reselect bank 0
+
+;*=*=*
+; Relocate addresses
+;*=*=*
+RELOC	LD	HL,(DEST)	; calculate relocation offset
+	LD	DE,-JMPBGN	;
+	ADD	HL,DE		;
+	LD	B,H		; offset to BC
+	LD	C,L		;
+	LD	HL,RELTAB	; fixup table
+RELO0	LD	E,(HL)		; get next address to relocate
+	INC	HL		;
+	LD	D,(HL)		;
+	INC	HL		;
+	LD	A,D		; test for null
+	OR	E		;
+	JR	Z,INSTAL	; exit if no more address
+	EX	DE,HL		; Swap DE and HL
+	LD	A,(HL)		; adjust vector (add BC)
+	ADD	A,C		;
+	LD	(HL),A		;
+	INC	HL		;
+	LD	A,(HL)		;
+	ADC	A,B		;
+	LD	(HL),A		;
+	EX	DE,HL		; Restore DE
+	JR	RELO0		; loop
+
+;*=*=*
+; Install Driver
+;*=*=*
+INSTAL	LD	HL,JMPBGN	; driver begin
+	LD	DE,(DEST)	; top of low memory
+	LD	BC,JMPEND-JMPBGN; block length
+	LD	(IX+0),DCB@PUT	; Stuff TYPE byte
+	LD	(IX+1),E
+	LD	(IX+2),D	; Install addr into dcb
+	LDIR			; move
+	LD	HL,(LOWPTR)	; set new top of low memory
+	LD	(HL),E		;
+	INC	HL		;
+	LD	(HL),D		;
+
+;*=*=*
+; Display banner
+;*=*=*
+	LD	HL,MSGJMPLD	; 'Module loaded in '
+	$SVC	@DSPLY
+	LD	HL,(LOWHIGH)	; 'LOW' / 'HIGH'
+	$SVC	@DSPLY
+	LD	HL,MSGMEMORY	; ' memory'
+	$SVC	@DSPLY
+
+	PUSH	IX		; Recover DCB in DE
+	POP	DE		;
+	LD	HL,READY_	; "Ready." message
+	$SVC	@MSG		; send to voice driver
+
+;-----	Exit OK:
+ENDOK	LD	HL,0		; no error
+EXIT	$SVC	@EXIT		; exit to DOS
+
+
+;*=*=*
+; Error messages logging
+;*=*=*
+CURDL:	LD	HL,CURDL_	; Other error
+	DB	0DDH		;
+VIASET:	LD	HL,VIASET_	; 'Must install via SET!'
+	DB	0DDH		;
+NOBANK:	LD	HL,NOBANK_	; 'Banked memory is not available!'
+	DB	0DDH		;
+NOLOW:	LD	HL,NOLOW_	; 'Low memory is not available!'
+	$SVC	@LOGOT		; Display and log a message (*DO and *JL)
+	LD	HL,-1		; Return code
+	JR	EXIT		; exit to DOS
+;
+
+VIASET_:DB	'Must install via SET!',CR
+CURDL_: DB	'LS-DOS is curdled!',CR
+NOBANK_:DB	'Banked memory is not available!',CR
+NOLOW_:	DB	'Low memory is not available!',CR
+READY_:	DB	'Ready.',CR
+
+MSGJMPLD:
+	DB	'Driver loaded in ',03H
+
+MSGLOW:
+	DB	'LOW',03H
+
+MSGHIGH:
+	DB	'HIGH',03H
+
+MSGMEMORY:
+	DB	' memory and in Bank #'
+MSGBNKNUM:
+	DB	'0',0AH,0DH
+
+
+;------------------------------------------------------------------------------
+;	J U M P E R   B E G I N
+;------------------------------------------------------------------------------
+
+JMPBGN:	JR	JBEGIN		; Branch around linkage
+FX00:	DW	JMPEND-1	; To contain last byte used
+	DB	JMPDCB-JMPNAM	; Calculate length of 'NAME'
+JMPNAM:	DB	'SAY'		; Name of this Jumper
+JMPDCB:	DW	$-$		; To contain DCB pointer for Jumper
+	DW	0		; Reserved by the DOS
+
+;*=*=*
+; Jumper execution start
+;*=*=*
+; On entry:
+;	Z,NC if @PUT
+;	C,NZ if @GET
+;	NC,NZ if @CTL
+;	B = I/O direction code (1=@GET, 2=@PUT, 4=@CTL)
+;	C = char code passed to @PUT or @CTL
+; On exit:
+;	A = char to return for @GET on success, with Z (CP A:RET)
+;	A = 0 if no char available for @GET, with NZ (OR 1:LD A,0:RET)
+;	A = errnum if an error occurred, with NZ (LD A,n:OR A:RET)
+JBEGIN:
+;	$BREAK
+	DI			; Disable interrupts while banking !
+	LD	(JSAVSP),SP	; Save SP
+FX01	EQU	$-2
+	LD	SP,JMPEND	; Switch to local stack
+FX02	EQU	$-2
+	CALL	JBEG1		; Exec the jumper
+FX03	EQU	$-2
+	LD	SP,$-$		; restore SP
+JSAVSP	EQU	$-2
+	EI			; re-enable interrupts
+	RET			; done
+
+JBEG1:	PUSH	AF		; save function flags
+	PUSH	BC		; save output char
+	LD	BC,0001H	; Select bank 1
+BANKNUM	EQU	$-2		; Fixed up by installer
+	$SVC	@BANK		; RAM bank switching
+	JR	NZ,JERROR	; Jump on error
+	LD	L,C		; save old bank
+	POP	BC		; Restore char
+	POP	AF		; restore flags
+
+	PUSH	BC		; save output char
+	PUSH	HL		; save old bank
+	CALL	BEGIN		; Execute banked module
+	POP	BC		; restore old bank
+	PUSH	AF		; save exit condition
+	LD	B,0		; restore old bank
+	$SVC	@BANK		; RAM bank switching
+	POP	AF		; restore exit condition
+	POP	BC		; output char
+	RET			; return to DOS
+
+JERROR:	POP	BC		; restore output char
+	INC	SP		; drop saved function flags
+	INC	SP		;
+	RET			; return to DOS with NZ
+
+;	DS	400H		; dummy space (to test low memory availability)
+
+	DC	40,76H		; Local stack
+JMPEND:				; Jumper ends here
+
+;------------------------------------------------------------------------------
+;	J U M P E R   E N D
+;------------------------------------------------------------------------------
+
+;*=*=*
+; Relocation table
+;*=*=*
+RELTAB:	DW	FX00,FX01,FX02,FX03
+	DW	0		; End of table
+
+BUCKET	DW	0		; Dummy storage
+LOWHIGH	DW	MSGLOW		; can be changed to MSGHIGH
+DEST	DS	2		; dest relocation address
+LOWPTR	DS	2		; pointer to top of low memory
+
+BUFFER	EQU	$
+
+	ORG	8000H		; Portion to move to banked memory at 8000H
+
+;------------------------------------------------------------------------------
+;	M O D U L E   B E G I N
+;------------------------------------------------------------------------------
+
+MODBGN:	JR	BEGIN		; Branch around linkage
+	DW	MODEND-1	; To contain last byte used
+	DB	MODDCB-MODNAM	; Calculate length of 'NAME'
+MODNAM:	DB	'SAY-EXT'	; Name of this module
+MODDCB:	DW	$-$		; To contain DCB pointer for module
+	DW	0		; Reserved by the DOS
+
+;*=*=*
+; Module execution start
+;*=*=*
+; On entry:
+;	Z,NC if @PUT
+;	C,NZ if @GET
+;	NC,NZ if @CTL
+;	B = I/O direction code (1=@GET, 2=@PUT, 4=@CTL)
+;	C = char code passed to @PUT or @CTL
+; On exit:
+;	A = char to return for @GET on success, with Z (CP A:RET)
+;	A = 0 if no char available for @GET, with NZ (OR 1:LD A,0:RET)
+;	A = errnum if an error occurred, with NZ (LD A,n:OR A:RET)
+BEGIN:				;
+	LD	(SAVSP),SP	; Save SP
+	LD	SP,STACK	; switch to local stack
+	CALL	BEGIN1		; do the I/O
+	LD	SP,$-$		; saved SP
+SAVSP	EQU	$-2		;
+	RET			; return
+
+BEGIN1:	JR	C,DOGET		; Go if @GET request
+	JR	Z,DOPUT		; Go if @PUT request
+	JR	DOCTL		; Was @CTL request
+
+; Get a character => No op
+DOGET:	OR	1		; clear Z (no char available)
+	LD	A,0		; clear A
+	RET
+
+; Send a character to SAY
+DOPUT:	LD	A,(PARMODE)	; Param mode ('|' or param letter)
+	OR	A		;
+	JR	NZ,DOPARAM	; Jump if Parameter being parsed
+	LD	A,C		; get output char
+	CP	20H		; Displayable ?
+	JR	C,DOPLAY	; Play buffer if not
+	CP	'['		; '[' to start phoneme mode ?
+	JR	NZ,DOPUT1	; Skip if not
+	CALL	PLAY_BUFFER	; play buffer
+	LD	A,0FFH		; set current mode to phoneme
+	LD	(MODE),A	; current mode: 0x00=english, 0xff=phoneme
+	JR	DOPUTX		; exit driver
+DOPUT1	CP	']'		; ']' to exit phoneme mode ?
+	JR	NZ,DOPUT2	; skip if not
+	CALL	PLAY_BUFFER	; play buffer
+	XOR	A		; set current mode to English
+	LD	(MODE),A	; current mode: 0x00=english, 0xff=phoneme
+	JR	DOPUTX		; exit driver
+DOPUT2	CP	'|'		; '|' to set parameter ?
+	JR	NZ,DOPUT3	; skip if not
+	LD	(PARMODE),A	; put '|' as param mode
+	JR	DOPLAY		; play buffer and exit driver
+DOPUT3:	CALL	PUT_CHAR	; playable character => put to buffer
+	JR	DOPUTX		; exit driver
+DOPLAY:	CALL	PLAY_BUFFER	; play buffer
+	JR	DOPUTX		; exit driver
+DORESET:XOR	A		; reset parameter mode
+	LD	(PARMODE),HL	;
+DOPUTX:	CP	A		; set Z (no error)
+	RET			; done
+
+; CTL character => No op
+DOCTL:	CP	A		; set Z (no error)
+	RET			; done
+
+; Parse parameter
+DOPARAM:;$BREAK
+	CP	'|'		; check last char: '|' ?
+	JR	NZ,DOPAR1	; jump if not
+	LD	A,C		; get param letter
+	AND	5FH		; convert to upper case
+	CP	'A'		; if not letter, reset and exit
+	JR	C,DORESET	;
+	CP	'Z'+1		;
+	JR	NC,DORESET	;
+	LD	(PARMODE),A	; store param letter
+	XOR	A		;
+	LD	(PARVAL),A	; reset param value
+	JR	DOPUTX		; exit driver
+DOPAR1:	LD	A,C		; param name known: parse value
+	SUB	'0'		; check and get digit value
+	JR	C,DOPAR2	; jump if not digit => process param
+	CP	10		;
+	JR	NC,DOPAR2	;
+	LD	C,A		; PARVAL := 10 * PARVAL + digit value
+	LD	A,(PARVAL)	;
+	LD	B,A		;
+	ADD	A,A		;
+	ADD	A,A		;
+	ADD	A,B		;
+	ADD	A,A		;
+	ADD	A,C		;
+	LD	(PARVAL),A	; store updated PARVAL
+	JR	DOPUTX		; exit driver
+DOPAR2:	LD	A,(PARVAL)	; process param: get value
+	LD	C,A		;
+	LD	A,(PARMODE)	; get param letter
+	CP	'P'		; 'P' = pitch ?
+	JR	NZ,DOPAR3	; skip if not
+	LD	A,C		; store new pitch value
+	LD	(PITCH),A	;
+	JR	DORESET		; reset param and exit
+DOPAR3:	CP	'S'		; 'S' = speed ?
+	JR	NZ,DOPAR4	; skip if not
+	LD	A,C		; store new speed value
+	LD	(SPEED),A	;
+	JR	DORESET		; reset param and exit
+DOPAR4:	CP	'M'		; 'M' = monotone ?
+	JR	NZ,DORESET	; reset param and exit if not
+	LD	A,C		; store new monotone flag
+	LD	(SONG),A	;
+	JR	DORESET		; reset param and exit
+
+PARMODE	DB	0		; parameter mode ('|' or param letter)
+PARVAL	DB	0		; parameter value
+
+;------------------------------------------------------------------------------
+;	M O D U L E   E N D
+;------------------------------------------------------------------------------
+
+	ENDIF			; DRIVER - Driver Mode
+
+
+;==================================================================================================
+;	E X E C U T A B L E   P A R T
+;==================================================================================================
+
+	IF	EXEC		; Executable mode
+ENTRY:
+	; CP/M entry point at 0100H; LS-DOS6 entry point at 3000H
+	;$BREAK
 	IF	LSDOS6
 	  EX	DE,HL		; Save HL = command line args ptr
 	ENDIF
@@ -196,7 +667,7 @@ READ_LOOP:
 	JP	READ_LOOP
 
 END_READ:
-	CALL	PLAY_BUFFER	; play 0x8700 buffer and reset STORE_ADDR and 0x86ff
+	CALL	PLAY_BUFFER	; play buffer
 	LD	A,(SOURCE)	; source: 0x00 = command line, 0xff = file
 	CP	00H
 	JR	Z,END_READ_EXIT
@@ -206,7 +677,7 @@ END_READ:
 	  CALL	BDOS
 	ENDIF
 	IF	LSDOS6
-	  $BREAK
+	  ;$BREAK
 	  $SVC	60		; @CLOSE
 	ENDIF
 END_READ_EXIT:
@@ -219,23 +690,23 @@ END_READ_EXIT:
 	ENDIF
 
 FOUND_NEWLINE:			; found CR or LF
-	CALL	PLAY_BUFFER	; play 0x8700 buffer and reset STORE_ADDR and 0x86ff
+	CALL	PLAY_BUFFER	; play buffer
 	JP	READ_LOOP
 
 BEGIN_PHONEME_M:		; found '[', begin phoneme section
-	CALL	PLAY_BUFFER	; play 0x8700 buffer and reset STORE_ADDR and 0x86ff
+	CALL	PLAY_BUFFER	; play buffer
 	LD	A,0FFH
 	LD	(MODE),A	; current mode: 0x00=english, 0xff=phoneme
 	JP	READ_LOOP
 
 BEGIN_ENGLISH_M:		; found ']', end of phoneme section
-	CALL	PLAY_BUFFER	; play 0x8700 buffer and reset STORE_ADDR and 0x86ff
+	CALL	PLAY_BUFFER	; play buffer
 	LD	A,00H
 	LD	(MODE),A	; current mode: 0x00=english, 0xff=phoneme
 	JP	READ_LOOP
 
 SET_PARAM:	; found '|', parameter
-	CALL	PLAY_BUFFER	; play 0x8700 buffer and reset STORE_ADDR and 0x86ff
+	CALL	PLAY_BUFFER	; play buffer
 	CALL	GET_NEXT_CHAR	; get next char (ret in A)
 	CP	'p'
 	JR	Z,SET_PARAM_PITCH
@@ -340,6 +811,8 @@ X_LOAD_FILE_BLO:
 	LD	(BLOCKPOS),A	; position inside file block (0..127)
 	RET
 
+	ENDIF			; EXEC - executable mode
+
 PUT_CHAR:	; put char (A) into the speech buffer
 	LD	HL,(STORE_ADDR)	; address of next character to store in speech buffer (
 	LD	(HL),A
@@ -349,7 +822,8 @@ PUT_CHAR:	; put char (A) into the speech buffer
 	INC	(HL)
 	RET
 
-PLAY_BUFFER:	; play 0x8700 buffer and reset STORE_ADDR and 0x86ff
+PLAY_BUFFER:	; play buffer
+	;$BREAK
 	LD	A,(SPEECHBUFFERLEN); Number of chars in speech buffer
 	CP	00H
 	RET	Z
@@ -369,6 +843,7 @@ PLAY_BUFFER_EXI:
 	LD	(STORE_ADDR),HL	; address of next character to store in speech buffer (
 	RET
 
+	IF	EXEC		; Executable mode
 SHOWHELP:	; show help and exit
 	IF CPM
 	  LD	DE,MSG_HELP	; Help text
@@ -382,6 +857,7 @@ SHOWHELP:	; show help and exit
 	  LD	HL,0		; No error exit
 	  $SVC	22		; @EXIT
 	ENDIF
+	ENDIF			; EXEC - Executable mode
 
 CALC_PITCH:
 	PUSH	BC
@@ -397,6 +873,7 @@ LOAD_SPEED:
 	LD	(SAMPLES_CTR),A	; samples counter (mem45)
 	RET
 
+	IF	EXEC		; Executable mode
 CHECK_INPUT_SOU:	; try to open specified file. On fail input comes from command line
 	IF	CPM
 	  LD	DE,FCB
@@ -408,7 +885,7 @@ CHECK_INPUT_SOU:	; try to open specified file. On fail input comes from command 
 	  LD	(D007C),A	; used ?
 	ENDIF
 	IF	LSDOS6
-	  $BREAK
+	  ;$BREAK
 	  LD	DE,FCB		; File control block
 	  PUSH	DE
 	  $SVC	78		; @FSPEC - extract filespec from @HL to @DE
@@ -424,6 +901,7 @@ OPEN_OK:
 	LD	A,0FFH
 	LD	(SOURCE),A	; source: 0x00 = command line, 0xff = file
 	RET
+	ENDIF			; EXEC - Executable mode
 
 
 ; ASSIGN PITCH CONTOUR
@@ -451,13 +929,23 @@ L_ASSIGN_PITCH_:
 	JR	NZ,L_ASSIGN_PITCH_
 	RET			; done
 
-
 MSG_HELP:	; Help text
+	IF	DRIVER
+	DB	"** SAY Speech Synthesizer Driver"
+	ENDIF
+
+	IF	EXEC
+	DB	"** SAY Speech Synthesizer"
+	ENDIF
+
+	DEFLINE " - v0.1.0-alpha **"
+	DEFLINE	""
 	DEFLINE	"Reengineered by Fabrizio Di Vittorio"
 	DEFLINE	"Re-reengineered by GmEsoft"
 	IF	ORCH90
 	DEFLINE	"TRS-80 Orchestra-90 version by GmEsoft"
 	ENDIF
+	IF	EXEC		; Executable mode
 	DEFLINE	"Specify English text, Phonemes (inside brackets) or filename to speech."
 	DEFLINE	"Parameters:"
 	DEFLINE	"  |p => pitch (0..255)"
@@ -470,6 +958,7 @@ MSG_HELP:	; Help text
 	DEFLINE	"  say |m1 song mode |m0 normal mode"
 	DEFLINE	"  say speech.txt"
 	DEFLINE	""
+	ENDIF			; EXEC - Executable mode
 	IF	CPM
 	  DB	'$'
 	ENDIF
@@ -1902,7 +2391,7 @@ L9ECB:	LD	HL,PHONEMELENGTHS; Phoneme lengths buffer
 	LD	(HL),A
 	SRL	A
 	ADD	A,(HL)
-	ADD	A,01H		; Why ADC ?
+	ADD	A,01H
 	LD	HL,PHONEMELENGTHS; Phoneme lengths buffer
 	ADD	HL,BC
 	LD	(HL),A
@@ -2387,8 +2876,8 @@ LA1B4:	LD	IY,PHONINDEX_OUT; phonemes table for output (PhonemeIndexOutput)
 ;
 ;void Code47574()
 RENDER:	; render the phoneme
-	IF	LSDOS6
-	  DI			; Disable interrupts for LS-DOS 6
+	IF	LSDOS6 && EXEC
+	  DI			; Disable interrupts for LS-DOS 6 executable
 	ENDIF
 	PUSH	BC		; save the table indexes
 	PUSH	DE
@@ -2933,19 +3422,21 @@ L_SOUNDOUT2:	; vowel output loop
 	DEC	(HL)
 LA4DA:	JR	Z,X_RENDER
 	CALL	LOAD_SPEED
-LA4E1:	LD	HL,PHONEME_INDEX; phoneme index (mem44)
-	DEC	(HL)
-	JR	NZ,LA50B
+LA4E1:	LD	HL,PHONEME_INDEX; phoneme index (mem44) - glottal pulse counter
+	DEC	(HL)		;
+	JR	NZ,LA50B	; jump if end of glottal pulse reached
+	; end of glottal pulse => next pulse; reset formants' phases
 	CALL	DELAY0		;  27 cycles (incl CALL)
 LA4EA:	LD	HL,PITCH_CONTOUR;
 	ADD	HL,DE
 	LD	A,(HL)
-	LD	(PHONEME_INDEX),A; phoneme index (mem44)
+	LD	(PHONEME_INDEX),A; phoneme index (mem44) - glottal pulse counter
 	LD	C,A		; A := A*3/4
 	SRL	C
 	SRL	C
 	SUB	C
-	LD	(LA6DA),A	; mem38
+	LD	(LA6DA),A	; mem38 = 3/4 * length of glottal pulse
+	; reset the phase of the formants to match the pulse
 	XOR	A		; clear:
 	LD	(PHASE3),A	; Phase3 (mem41)
 	LD	(PHASE2),A	; Phase2/number of frames to write (mem42)
@@ -2955,25 +3446,27 @@ LA4EA:	LD	HL,PITCH_CONTOUR;
 X_RENDER:
 	POP	DE		; restore the table indexes
 	POP	BC
-	IF	LSDOS6
-	  EI			; Re-enable interrupts for LS-DOS 6
+	IF	LSDOS6 && EXEC
+	  EI			; Re-enable interrupts for LS-DOS 6 executable
 	ENDIF
 	RET
 
+	; the glottal pulse is not completed
 LA50B:
 	; Within the first 75% of the glottal pulse?
-	LD	HL,LA6DA
+	LD	HL,LA6DA	; decrease the 75% counter
 	DEC	(HL)
-	JR	NZ,LA51E
+	JR	NZ,LA51E	; jump if 75% not reached
+
 	; Is the count is non-zero and the sampled flag is zero?
 	LD	A,(CUR_PHONM_INDEX); current phoneme index (mem39)
 	CP	00H
-	JR	Z,LA51E
+	JR	Z,LA51E		; interleave the sample if needed
 	CALL	RENDER_SAMPLE	; Render a sampled sound from the sampleTable.
-	JP	LA4EA
+	JP	LA4EA		; glottal pulse completed
 
 LA51E:
-	; reset the phase of the formants to match the pulse
+	; Update the 3 phases using the frequencies
 	CALL	DELAY0		;  27 cycles (incl CALL)
 	LD	HL,FREQUENCY1	; Frequency 1 frames
 	ADD	HL,DE
@@ -3751,6 +4244,9 @@ RULES_M:	; Rules for 'M'
 RULES_N:	; Rules for 'N'
 	DEFRULE	"]N"
 	DEFRULE	" (N) =EH4N"
+	IF	FIXNINE		; Fix 'nineteen', 'ninety'
+	DEFRULE	" (NINE)=NAY4N"
+	ENDIF
 	DEFRULE	"E(NG)+=NJ"
 	DEFRULE	"(NG)R=NXG"
 	DEFRULE	"(NG)#=NXG"
@@ -5485,8 +5981,9 @@ PHONM_FLAGS2:	;phoneme flags 2
 	DB	F2_NONE                                  ; 76: '**'  = $00
 	DB	F2_NONE                                  ; 77: '**'  = $00
 
-PHONM_FLAGS_END:	;end of phoneme flags
+PHONM_FLAGS_END:		; end of phoneme flags
 
+MODEND:				; Module ends here
 
 ;==================================================================================================
 ;	B U F F E R S
