@@ -13,18 +13,34 @@ Based on SPEECH.COM for Bondwell 12/14, and on an improved version [SAY.COM](htt
 further reworked to reduce the size of the binary executable, and to port it to TRS-80 Model 4 with Orchestra-90 
 running on CP/M or LS-DOS 6.3.
 
-Plan to make a terminate-and-stay-resident version.
+With a terminate-and-stay-resident version for LS-DOS 6 (SAY/DVR).
 
 To be assembled using ZMAC by [George Phillips](http://48k.ca) (http://48k.ca/zmac.html). Produces a core-image-file that will be 
 loaded by CP/M at 0100H, or a /CMD file that will be loaded by LS-DOS 6.3.
 
-### CP/M Version:
+### CP/M Executable Version:
 
 ![](SAY-CPM.PNG)
 
-### LS-DOS 6.x Version:
+### LS-DOS 6.x Executable Version:
 
 ![](SAY-LSDOS.PNG)
+
+### LS-DOS 6.x Driver Version:
+
+Needs a TRS-80 Model 4 or 4p with at least 128 kB of RAM.
+
+Load the driver using the command: `SET *SY SAY`.
+
+To use it, use the *SY byte-oriented device. For example:
+
+`COPY SPEECH1/TXT *SY`
+	
+Or run the supplied BASIC example `NUMBERS/BAS`:
+
+`BASIC NUMBERS/BAS`
+
+![](SAY-LSDOS-DRV.PNG)
 
 ### Credits
 
