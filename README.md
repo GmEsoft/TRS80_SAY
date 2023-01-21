@@ -4,6 +4,8 @@ Say
 S.A.M.-based text-to-speech voice synthesizer,<br>for TRS-80 CP/M and LS-DOS 6 and Orchestra-90
 -----------------------------------------------------------------------------------------------
 
+Version 0.2.0-alpha
+
 ### Description
 
 This is a S.A.M.-based text-to-speech voice synthesizer for CP/M and LS-DOS 6.3. Adapted to work on the TRS-80 
@@ -17,6 +19,11 @@ With a terminate-and-stay-resident version for LS-DOS 6 (SAY/DVR).
 
 To be assembled using ZMAC by [George Phillips](http://48k.ca) (http://48k.ca/zmac.html). Produces a core-image-file that will be 
 loaded by CP/M at 0100H, or a /CMD file that will be loaded by LS-DOS 6.3.
+
+v0.2.0-alpha adds the following features:
+- `|e1 ` flag to echo the input (`|e0 ` to disable it);
+- `|d1 ` flag to echo the phonemes string (`|e0 ` to disable it);
+- in case of error in the phonemes string, display the string with the position where the error was found.
 
 ### CP/M Executable Version:
 
