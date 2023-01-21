@@ -1,4 +1,6 @@
-; 	** CP/M SAY.COM - LS-DOS 6 SAY/CMD and SAY/DVR **
+;
+; 	** CP/M SAY.COM - LS-DOS 6 SAY/CMD and SAY/DVR - v0.2.0-alpha **
+;
 ;
 ;	Assemble using ZMAC from http://48k.ca/zmac.html
 ;	- For CP/M (Bondwell 12/14 CP/M):
@@ -25,9 +27,9 @@
 _BREAK	EQU	1
 
 	IF	@@0
-CONFIG	EQU	@@0
+CONFIG	  EQU	@@0
 	ELSE
-CONFIG	EQU	1
+CONFIG	  EQU	1
 	ENDIF
 
 
@@ -147,26 +149,48 @@ DEFLINE	MACRO	STR
 	ENDIF
 	ENDM
 
+;-----	LS-DOS 6 SVC equates
 	IF	LSDOS6
+
+@BANK	  EQU	102		; RAM bank switching
+@CHNIO	  EQU	20		; Device chain character I/O
+@DSP	  EQU	2		; Character output to *DO (video display)
+@DSPLY	  EQU	10		; Line output to *DO (video display)
+@EXIT	  EQU	22		; Exit program with return code
+@FLAGS$	  EQU	101		; Obtain system flags pointer
+@GTDCB	  EQU	82		; Obtain DCB pointer given devspec
+@HIGH$	  EQU	100		; Obtain or alter HIGH$/LOW$
+@LOGOT	  EQU	12		; Display and log a message (*DO and *JL)
+@MSG	  EQU	13		; Send a message line to a device
+@SOUND	  EQU	104		; Generate tone
+
+;-----	  Invoke SVC
 $SVC	  MACRO	#NUM
 	   LD	A,#NUM
 	   RST	28H
 	  ENDM
+
+CMDLINE	EQU	0000H		; dummy
+
 	ENDIF
 
-BOOT	EQU	0000H
-BDOS	EQU	0005H
-D007C	EQU	007CH
-D0080	EQU	0080H
-CMDLINE	EQU	0082H
+;-----	CP/M BDOS EQUATES equates
+	IF	CPM
+BDOS	  EQU	0005H
+D007C	  EQU	007CH
+D0080	  EQU	0080H
+CMDLINE	  EQU	0082H
+	ENDIF
 
+LF	EQU	10
+CR	EQU	13
 
 	IF	CPM
-	  ORG	0100H
+	  ORG	0100H		; CP/M Entry Point
 	ENDIF
 
 	IF	LSDOS6
-	  ORG	3000H
+	  ORG	3000H		; LS-DOS 6 Entry Point
 	ENDIF
 
 	IF	DRIVER
@@ -177,20 +201,6 @@ CMDLINE	EQU	0082H
 ;	Module will be loaded at 8000H in bank 1 if available
 ;	Jumper will be loaded in LOW memory
 ;
-LF	EQU	10
-CR	EQU	13
-
-
-@BANK	EQU	102		; RAM bank switching
-@CHNIO	EQU	20		; Device chain character I/O
-@DSP	EQU	2		; Character output to *DO (video display)
-@DSPLY	EQU	10		; Line output to *DO (video display)
-@EXIT	EQU	22		; Exit program with return code
-@FLAGS$	EQU	101		; Obtain system flags pointer
-@GTDCB	EQU	82		; Obtain DCB pointer given devspec
-@HIGH$	EQU	100		; Obtain or alter HIGH$/LOW$
-@LOGOT	EQU	12		; Display and log a message (*DO and *JL)
-@MSG	EQU	13		; Send a message line to a device
 
 DCB@GET	EQU	01H		; DCB can handle @GET
 DCB@PUT	EQU	02H		; DCB can handle @PUT
@@ -208,7 +218,7 @@ DCB@FCB	EQU	80H		; DCB is actually a FCB
 ;	M O D U L E   I N S T A L L E R
 ;------------------------------------------------------------------------------
 
-ENTRY:
+ENTRY:				; Installer entry point
 ;	$BREAK
 	PUSH	DE
 	POP	IX		; Get dcb
@@ -457,7 +467,7 @@ JERROR:	POP	BC		; restore output char
 
 ;	DS	400H		; dummy space (to test low memory availability)
 
-	DC	40,76H		; Local stack
+	DC	60H,76H		; Local stack
 JMPEND:				; Jumper ends here
 
 ;------------------------------------------------------------------------------
@@ -533,13 +543,13 @@ DOPUT:	LD	A,(PARMODE)	; Param mode ('|' or param letter)
 	LD	A,0FFH		; set current mode to phoneme
 	LD	(MODE),A	; current mode: 0x00=english, 0xff=phoneme
 	JR	DOPUTX		; exit driver
-DOPUT1	CP	']'		; ']' to exit phoneme mode ?
+DOPUT1:	CP	']'		; ']' to exit phoneme mode ?
 	JR	NZ,DOPUT2	; skip if not
 	CALL	PLAY_BUFFER	; play buffer
 	XOR	A		; set current mode to English
 	LD	(MODE),A	; current mode: 0x00=english, 0xff=phoneme
 	JR	DOPUTX		; exit driver
-DOPUT2	CP	'|'		; '|' to set parameter ?
+DOPUT2:	CP	'|'		; '|' to set parameter ?
 	JR	NZ,DOPUT3	; skip if not
 	LD	(PARMODE),A	; put '|' as param mode
 	JR	DOPLAY		; play buffer and exit driver
@@ -553,11 +563,12 @@ DOPUTX:	CP	A		; set Z (no error)
 	RET			; done
 
 ; CTL character => No op
-DOCTL:	CP	A		; set Z (no error)
+DOCTL:	$BREAK
+	CP	A		; set Z (no error)
 	RET			; done
 
 ; Parse parameter
-DOPARAM:;$BREAK
+DOPARAM:
 	CP	'|'		; check last char: '|' ?
 	JR	NZ,DOPAR1	; jump if not
 	LD	A,C		; get param letter
@@ -599,9 +610,17 @@ DOPAR3:	CP	'S'		; 'S' = speed ?
 	LD	(SPEED),A	;
 	JR	DORESET		; reset param and exit
 DOPAR4:	CP	'M'		; 'M' = monotone ?
-	JR	NZ,DORESET	; reset param and exit if not
+	JR	NZ,DOPAR5	; skip if not
 	LD	A,C		; store new monotone flag
 	LD	(SONG),A	;
+DOPAR5:	CP	'D'		; 'D' = debug mode ?
+	JR	NZ,DOPAR6	; skip if not
+	LD	A,C		; store new monotone flag
+	LD	(DEBUG),A	;
+DOPAR6:	CP	'E'		; 'E' = echo mode ?
+	JR	NZ,DORESET	; reset param and exit if not
+	LD	A,C		; store new monotone flag
+	LD	(ECHO),A	;
 	JR	DORESET		; reset param and exit
 
 PARMODE	DB	0		; parameter mode ('|' or param letter)
@@ -621,15 +640,14 @@ PARVAL	DB	0		; parameter value
 	IF	EXEC		; Executable mode
 ENTRY:
 	; CP/M entry point at 0100H; LS-DOS6 entry point at 3000H
-	;$BREAK
 	IF	LSDOS6
 	  EX	DE,HL		; Save HL = command line args ptr
 	ENDIF
 
-	LD	HL,STACK	; stack
+	LD	HL,STACK	; set local stack
 	LD	SP,HL
 
-	XOR	A
+	XOR	A		; init input buffer
 	LD	(INPUT_BUFFER_LEN),A
 
 	IF	CPM
@@ -677,7 +695,6 @@ END_READ:
 	  CALL	BDOS
 	ENDIF
 	IF	LSDOS6
-	  ;$BREAK
 	  $SVC	60		; @CLOSE
 	ENDIF
 END_READ_EXIT:
@@ -708,34 +725,30 @@ BEGIN_ENGLISH_M:		; found ']', end of phoneme section
 SET_PARAM:	; found '|', parameter
 	CALL	PLAY_BUFFER	; play buffer
 	CALL	GET_NEXT_CHAR	; get next char (ret in A)
-	CP	'p'
-	JR	Z,SET_PARAM_PITCH
-	CP	'P'
-	JR	Z,SET_PARAM_PITCH
-	CP	's'
-	JR	Z,SET_PARAM_SPEED
-	CP	'S'
-	JR	Z,SET_PARAM_SPEED
-	CP	'm'
-	JR	Z,SET_PARAM_SONG
-	CP	'M'
-	JR	Z,SET_PARAM_SONG
-	JP	READ_LOOP
+	AND	5FH		; to uppercase
+	LD	HL,PITCH	; pitch parameter address
+	CP	'P'		; 'P' = pitch ?
+	JR	Z,SET_PARAM_HL	; set pitch value if yes
+	LD	HL,SPEED	; speed parameter address
+	CP	'S'		; 'S' = speed ?
+	JR	Z,SET_PARAM_HL	; set speed value if yes
+	LD	HL,SONG		; song mode parameter address
+	CP	'M'		; 'M' = song mode ?
+	JR	Z,SET_PARAM_HL	; set song mode value if yes
+	LD	HL,DEBUG	; debug parameter address
+	CP	'D'		; 'D' = debug ?
+	JR	Z,SET_PARAM_HL	; set debug value if yes
+	LD	HL,ECHO		; echo parameter address
+	CP	'E'		; 'E' = echo ?
+	JR	Z,SET_PARAM_HL	; set echo value if yes
+	JP	READ_LOOP	; next char
 
-SET_PARAM_PITCH:
-	CALL	DECODE_INTEGER
-	LD	(PITCH),A	; pitch (0..255)
-	JP	READ_LOOP
-
-SET_PARAM_SPEED:
-	CALL	DECODE_INTEGER
-	LD	(SPEED),A	; speed (0..225)
-	JP	READ_LOOP
-
-SET_PARAM_SONG:
-	CALL	DECODE_INTEGER
-	LD	(SONG),A	; song mode (monotone output): 0 = song mode disabled,
-	JP	READ_LOOP
+SET_PARAM_HL:
+	PUSH	HL		; save pointer
+	CALL	DECODE_INTEGER	; get value in A
+	POP	HL		; restore pointer
+	LD	(HL),A		; store parameter value
+	JP	READ_LOOP	; next char
 
 DECODE_INTEGER:
 	LD	B,00H
@@ -759,6 +772,8 @@ X_DECODE_INTEGE:
 	LD	A,B
 	RET
 
+
+;-----	Get next char in A
 GET_NEXT_CHAR:	; get next char (ret in A)
 	LD	A,(SOURCE)	; source: 0x00 = command line, 0xff = file
 	CP	0FFH
@@ -798,21 +813,81 @@ GET_NEXT_CHAR_F:	; get next char from file (ret in A)
 	ENDIF
 	RET
 
-LOAD_FILE_BLOCK:	; load a new block (128 bytes) into 0x0080
-	LD	DE,FCB
-	LD	C,14H
-	CALL	BDOS
-	CP	00H
-	JR	Z,X_LOAD_FILE_BLO
-	LD	A,1AH		; End of file (Ctrl-Z)
-	LD	(D0080),A
+	IF	CPM
+LOAD_FILE_BLOCK:		; load a new block (128 bytes) into 0x0080
+	  LD	DE,FCB
+	  LD	C,14H
+	  CALL	BDOS
+	  CP	00H
+	  JR	Z,X_LOAD_FILE_BLO
+	  LD	A,1AH		; End of file (Ctrl-Z)
+	  LD	(D0080),A
 X_LOAD_FILE_BLO:
-	LD	A,00H
-	LD	(BLOCKPOS),A	; position inside file block (0..127)
-	RET
+	  LD	A,00H
+	  LD	(BLOCKPOS),A	; position inside file block (0..127)
+	  RET
+	ENDIF			; CP/M
 
 	ENDIF			; EXEC - executable mode
 
+;-----	Protected stack driver SVC call
+DRVSVC:
+	IF	DRIVER		; if LS-DOS driver mode
+	  LD	(SVCSP),SP	; save local stack pointer
+	  LD	SP,(SAVSP)	; restore low-core memory stack ptr
+	ENDIF			; end if LS-DOS driver mode
+	RST	28H		; $SVC
+	DI			; re-disable interrupts
+	IF	DRIVER		; if LS-DOS driver mode
+	  LD	SP,$-$		; restore local stack ptr
+SVCSP	  EQU	$-2
+	ENDIF			; end if LS-DOS driver mode
+	RET			; done
+
+;-----	Display char in A
+DDISA:
+	IF	LSDOS6		; LS-DOS 6 code
+	  PUSH	BC
+	  LD	C,A		; char to C
+	  LD	A,@DSP
+	  CALL	DRVSVC		; invoke @DSP
+	  POP	BC
+	ENDIF			; end LSDOS6
+	IF	CPM		; CP/M code
+;	  $BREAK
+	  PUSH	HL
+	  PUSH	DE
+	  PUSH	BC
+	  LD	E,A		; char to display
+	  LD	C,02H		; display char BDOS func
+	  PUSH	AF
+	  CALL	BDOS
+	  POP	AF
+	  CP	CR		; CR ?
+	  LD	E,LF
+	  LD	C,02H
+	  CALL	Z,BDOS		; if yes, append LF
+	  POP	BC
+	  POP	DE
+	  POP	HL
+	ENDIF
+	RET
+
+;-----	Display message @HL (end with 0, ETX or CR)
+DMSG:	LD	A,(HL)		; fetch char
+	INC	HL		;
+	OR	A		; NUL ?
+	RET	Z		; ret if yes
+	CP	3		; ETX ?
+	RET	Z		; ret if yes
+	PUSH	AF		; save char
+	CALL	DDISA		; display it
+	POP	AF		; rest char
+	CP	0DH		; CR ?
+	JR	NZ,DMSG		; loop if not
+	RET			; done
+
+;-----	Put char in speech buffer
 PUT_CHAR:	; put char (A) into the speech buffer
 	LD	HL,(STORE_ADDR)	; address of next character to store in speech buffer (
 	LD	(HL),A
@@ -820,10 +895,13 @@ PUT_CHAR:	; put char (A) into the speech buffer
 	LD	(STORE_ADDR),HL	; address of next character to store in speech buffer (
 	LD	HL,SPEECHBUFFERLEN; Number of chars in speech buffer
 	INC	(HL)
-	RET
+	LD	HL,ECHO		; ECHO mode active ?
+	INC	(HL)
+	DEC	(HL)
+	JP	NZ,DDISA	; echo char if yes
+	RET			; done
 
 PLAY_BUFFER:	; play buffer
-	;$BREAK
 	LD	A,(SPEECHBUFFERLEN); Number of chars in speech buffer
 	CP	00H
 	RET	Z
@@ -885,7 +963,6 @@ CHECK_INPUT_SOU:	; try to open specified file. On fail input comes from command 
 	  LD	(D007C),A	; used ?
 	ENDIF
 	IF	LSDOS6
-	  ;$BREAK
 	  LD	DE,FCB		; File control block
 	  PUSH	DE
 	  $SVC	78		; @FSPEC - extract filespec from @HL to @DE
@@ -931,14 +1008,14 @@ L_ASSIGN_PITCH_:
 
 MSG_HELP:	; Help text
 	IF	DRIVER
-	DB	"** SAY Speech Synthesizer Driver"
+	  DB	"** SAY Speech Synthesizer Driver"
 	ENDIF
 
 	IF	EXEC
-	DB	"** SAY Speech Synthesizer"
+	  DB	"** SAY Speech Synthesizer"
 	ENDIF
 
-	DEFLINE " - v0.1.0-alpha **"
+	DEFLINE " - v0.2.0-alpha **"
 	DEFLINE	""
 	DEFLINE	"Reengineered by Fabrizio Di Vittorio"
 	DEFLINE	"Re-reengineered by GmEsoft"
@@ -988,6 +1065,10 @@ PITCH:	; pitch (0..255)
 SPEED:	; speed (0..225)
 	DB	48H
 SONG:	; song mode (monotone output): 0 = song mode disabled, >0 =
+	DB	00H
+DEBUG:	; debug mode
+	DB	00H
+ECHO:	; echo mode
 	DB	00H
 SOURCE:	; source: 0x00 = command line, 0xff = file
 	DB	00H
@@ -1248,6 +1329,7 @@ L98A0:	LD	A,(MEM57)	; Phoneme insertion point (mem57)
 	CALL	PLAY_BELL	; Send <BEL> to console
 	CALL	PLAY_BELL	; Send <BEL> to console
 	CALL	PLAY_BELL	; Send <BEL> to console
+	$BREAK
 	HALT
 
 LHS_SPC:	; lhs ' ' - Match word break
@@ -1376,6 +1458,7 @@ L9976:	LD	A,(MEM57)	; Phoneme insertion point (mem57)
 	CALL	PLAY_BELL	; Send <BEL> to console
 	CALL	PLAY_BELL	; Send <BEL> to console
 	CALL	PLAY_BELL	; Send <BEL> to console
+	$BREAK
 	HALT
 RHS_SPC:	; rhs ' ' - Match word break
 	CALL	GET_RHS		; Get RHS address: &CHARFLAGS[ENGLISH_BUFFER[MEM58+1]]
@@ -1568,15 +1651,54 @@ GET_RHS:	; Get RHS address: &CHARFLAGS[ENGLISH_BUFFER[MEM58+1]]
 ;	P H O N E M E S
 ;==================================================================================================
 
+DEBUG_PHONEME:			; trace phonemes on DEBUG mode or error
+	LD	A,(ERROR_POS)	; Error found in phonemes string ?
+	INC	A		; (if ERROR_POS = $FF)
+	JR	NZ,JDBG0	; Jump if yes
+	LD	A,(DEBUG)	; DEBUG flag set ?
+	OR	A		;
+	RET	Z		; return if not
+	XOR	A		; clear Z
+JDBG0:	LD	A,0DH		;
+	CALL	NZ,DDISA	; display CR if error found
+	LD	A,'['		; display '['
+	CALL	DDISA		;
+	LD	HL,SPEECH_BUFFER; point to phonemes string
+LDBG1:	LD	A,(HL)		; fetch char
+	INC	HL		; mask high bit
+	AND	7FH		;
+	CP	0DH		; exit loop if end of phonemes string
+	JR	Z,JDBG1		;
+	CALL	DDISA		; display char
+	JR	LDBG1		; next char
+JDBG1:	LD	A,']'		; display ']'
+	CALL	DDISA		;
+	LD	A,(ERROR_POS)	; error found in phonemes string ?
+	INC	A		;
+	RET	Z		; return if not
+	LD	B,A		; error pos to loop counter
+	LD	A,0DH		; display CR
+	CALL	DDISA		;
+LDBG2:	LD	A,' '		; display ' '
+	CALL	DDISA		;
+	DJNZ	LDBG2		; until under error location
+	LD	A,'^'		; display '^' error pointer
+	CALL	DDISA		;
+	LD	A,0DH		; display CR
+	CALL	DDISA		;
+	RET			; done
+
+
 
 PROCESS_PHONEME:		; Process Phonemes string (S9b61_say_main)
 	LD	A,0FFH
 	LD	(ERROR_POS),A	; Error position
 	CALL	PARSER1		; Parse 'input[]' and populate 'phonemeIndex[]'
+	CALL	DEBUG_PHONEME	; trace phonemes string on debug mode or error
 	LD	A,(ERROR_POS)	; Error position
-	CP	0FFH
+	INC	A
 	JR	NZ,SAY_UNINIT	; if (error_pos != $ff) goto say_uninit
-	CALL	PARSER2		; Rules based replacement of certain phoneme patterns
+NDEBUG:	CALL	PARSER2		; Rules based replacement of certain phoneme patterns
 	CALL	COPY_STRESS	; Rules based adjustment of stress
 	CALL	SET_PHONM_LNGTH	; Change phonemeLength depedendent on stress
 	CALL	ADJUST_LENGTH	; Rules based length adjustments
@@ -1827,11 +1949,14 @@ L9BFF:	CP	(HL)
 	ENDIF
 	IF	LSDOS6
 	  LD	B,00H
-	  $SVC	104		; @SOUND
+	  LD	A,@SOUND
+	  CALL	DRVSVC
 	  LD	B,03H
-	  $SVC	104		; @SOUND
+	  LD	A,@SOUND
+	  CALL	DRVSVC
 	  LD	B,06H
-	  $SVC	104		; @SOUND
+	  LD	A,@SOUND
+	  CALL	DRVSVC
 	ENDIF
 	RET
 
@@ -3781,20 +3906,17 @@ LA686:	DEC	C
 	LD	(HL),A
 LA697:	RET
 
-MSG_ENG_OR_PHO:	; unused
-	DB	1BH
-	DB	'*',0DH,0AH
-	DB	'ENGLISH OR PHONEME : $'
-MSG_ENG_OR_PHOS:	; unused
-	DB	'ENGLISH OR PHONEMES',0DH
-MSG_CRLF:
-	DB	0DH,0AH
-	DB	'$'
-
 PLAY_BELL:	; Send <BEL> to console
-	LD	E,07H
-	LD	C,02H
-	JP	BDOS
+	IF	CPM
+	  LD	E,07H
+	  LD	C,02H
+	  JP	BDOS
+	ENDIF
+	IF	LSDOS6
+	  LD	B,0
+	  LD	A,@SOUND
+	  JP	DRVSVC
+	ENDIF
 
 SETHIGHBIT:	; put "1" in bit 7 of all bytes in (HL), for "C" bytes
 	SET	7,(HL)
@@ -5990,14 +6112,14 @@ MODEND:				; Module ends here
 ;==================================================================================================
 
 	IF	CPM
-FCB	EQU	005CH
-FCB_END	EQU	007CH
+FCB	  EQU	005CH
+FCB_END	  EQU	007CH
 	ENDIF
 
 	IF	LSDOS6
-FCB	DS	0020H		; DOS file control block
-FCB_BUF	DS	0100H		; DOS sector buffer
-UREC	DS	0080H		; User record buffer
+FCB	  DS	0020H		; DOS file control block
+FCB_BUF	  DS	0100H		; DOS sector buffer
+UREC	  DS	0080H		; User record buffer
 	ENDIF
 
 PHONINDEX_OUT:	; phonemes table for output (PhonemeIndexOutput)
