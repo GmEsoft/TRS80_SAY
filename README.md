@@ -22,7 +22,7 @@ loaded by CP/M at 0100H, or a /CMD file that will be loaded by LS-DOS 6.3.
 
 v0.2.0-alpha adds the following features:
 - `|e1 ` flag to echo the input (`|e0 ` to disable it);
-- `|d1 ` flag to echo the phonemes string (`|e0 ` to disable it);
+- `|d1 ` flag to echo the phonemes string (`|d0 ` to disable it);
 - in case of error in the phonemes string, display the string with the position where the error was found.
 
 ### CP/M Executable Version:
