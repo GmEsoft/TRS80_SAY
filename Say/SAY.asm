@@ -154,14 +154,18 @@ DEFLINE	MACRO	STR
 
 @BANK	  EQU	102		; RAM bank switching
 @CHNIO	  EQU	20		; Device chain character I/O
+@CLOSE	  EQU	60		; Close an open disk file
 @DSP	  EQU	2		; Character output to *DO (video display)
 @DSPLY	  EQU	10		; Line output to *DO (video display)
 @EXIT	  EQU	22		; Exit program with return code
 @FLAGS$	  EQU	101		; Obtain system flags pointer
+@FSPEC	  EQU	78		; Fetch and parse a file specification
+@GET	  EQU	3		; Character input from a device/file
 @GTDCB	  EQU	82		; Obtain DCB pointer given devspec
 @HIGH$	  EQU	100		; Obtain or alter HIGH$/LOW$
 @LOGOT	  EQU	12		; Display and log a message (*DO and *JL)
 @MSG	  EQU	13		; Send a message line to a device
+@OPEN	  EQU	59		; Open an existing file
 @SOUND	  EQU	104		; Generate tone
 
 ;-----	  Invoke SVC
@@ -695,7 +699,7 @@ END_READ:
 	  CALL	BDOS
 	ENDIF
 	IF	LSDOS6
-	  $SVC	60		; @CLOSE
+	  $SVC	@CLOSE		; Close the file
 	ENDIF
 END_READ_EXIT:
 	IF	CPM
@@ -703,7 +707,7 @@ END_READ_EXIT:
 	ENDIF
 	IF	LSDOS6
 	  LD	HL,0		; no error
-	  $SVC	22		; @EXIT
+	  $SVC	@EXIT		; Exit program with return code
 	ENDIF
 
 FOUND_NEWLINE:			; found CR or LF
@@ -806,7 +810,7 @@ GET_NEXT_CHAR_F:	; get next char from file (ret in A)
 	ENDIF
 	IF	LSDOS6
 	  LD	DE,FCB		; File control block
-	  $SVC	3		; @GET - read one byte from file
+	  $SVC	@GET		; read one byte from file
 	  RET	Z		; if success
 	  XOR	A		; End of file => return 0
 	  RET
@@ -931,9 +935,9 @@ SHOWHELP:	; show help and exit
 	ENDIF
 	IF	LSDOS6
 	  LD	HL,MSG_HELP
-	  $SVC	10		; @DSPLY - display text @HL
+	  $SVC	@DSPLY		; Line output to *DO (video display)
 	  LD	HL,0		; No error exit
-	  $SVC	22		; @EXIT
+	  $SVC	@EXIT		; Exit program with return code
 	ENDIF
 	ENDIF			; EXEC - Executable mode
 
@@ -965,11 +969,11 @@ CHECK_INPUT_SOU:	; try to open specified file. On fail input comes from command 
 	IF	LSDOS6
 	  LD	DE,FCB		; File control block
 	  PUSH	DE
-	  $SVC	78		; @FSPEC - extract filespec from @HL to @DE
+	  $SVC	@FSPEC		; Fetch and parse a file specification
 	  POP	DE
 	  LD	HL,FCB_BUF	; Sector buffer
 	  LD	B,1		; use @GET to read the file
-	  $SVC	59		; @OPEN - open existing file @DE
+	  $SVC	@OPEN		; Open an existing file
 	  JR	Z,OPEN_OK
 	  CP	2AH		; LRL mismatch error code
 	  RET	NZ
