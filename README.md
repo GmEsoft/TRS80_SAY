@@ -96,4 +96,4 @@ The following text is taken from his repository.
 - https://github.com/s-macke/SAM.git for a re-implementation of S.A.M. in the C language, done by 
   [Sebastian Macke](https://github.com/s-macke).
 
-Both projects have also been helpful to this project.
+Both projects have also been helpful to this one.
