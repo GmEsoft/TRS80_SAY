@@ -1107,8 +1107,7 @@ L_PROCESS_ENGLI:
 	CP	E
 	JR	NZ,L_PROCESS_ENGLI
 	CALL	CONV_ENG_TO_PHO	; convert English buffer (src in 0x5901) to phonemes (d
-	CALL	PROCESS_PHONEME	; Process Phonemes string (S9b61_say_main)
-	RET
+	JP	PROCESS_PHONEME	; Process Phonemes string (S9b61_say_main)
 
 CONV_ENG_TO_PHO:	; convert English buffer (src in 0x5901) to phonemes (dest t
 	LD	B,00H
